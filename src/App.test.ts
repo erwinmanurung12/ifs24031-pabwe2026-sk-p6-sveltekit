@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import RootLayout from "./routes/+layout.svelte";
 import { ssr } from "./routes/+layout";
+import { ssr as authSsr } from "./routes/auth/+layout";
 import RootPage from "./routes/+page.svelte";
 import RootError from "./routes/+error.svelte";
 import AuthLayout from "./routes/auth/+layout.svelte";
@@ -13,10 +14,13 @@ import UsersPageWrapper from "./routes/users/+page.svelte";
 import { renderWithProviders } from "./test-utils";
 import { updateMockPage } from "./setupTests";
 import apiHelper from "./helpers/apiHelper";
+import { usersStore } from "./features/users/states/usersStore";
 
 describe("SvelteKit Routes and Layouts", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Hindari request jaringan sungguhan agar hasil test deterministik
+    vi.spyOn(usersStore, "asyncSetProfile").mockImplementation(() => Promise.resolve());
     updateMockPage({
       url: new URL("http://localhost:3005/"),
       params: { courseId: "1", contentId: "1" },
@@ -26,6 +30,10 @@ describe("SvelteKit Routes and Layouts", () => {
       data: {},
       form: null,
     });
+  });
+
+  it("should render auth routes on the client only (ssr=false) to avoid pre-hydration form submit", () => {
+    expect(authSsr).toBe(false);
   });
 
   it("should verify ssr is true in +layout.ts", () => {
