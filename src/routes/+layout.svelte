@@ -1,21 +1,18 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import "../index.css";
-  import { browser } from "$app/environment";
   import { page } from "$app/state";
   import CourseLayout from "../features/courses/layouts/CourseLayout.svelte";
-  import { initSession } from "../features/auth/states/authStore";
+  import "@fontsource-variable/plus-jakarta-sans";
 
-  let { children } = $props();
-
-  if (browser) initSession();
-
-  const isAuthRoute = $derived(page.url.pathname.startsWith("/auth"));
+  let { children }: { children?: Snippet } = $props();
+  let isAuthRoute = $derived(page.url.pathname.startsWith("/auth"));
 </script>
 
 {#if isAuthRoute}
-  {@render children()}
+  {@render children?.()}
 {:else}
   <CourseLayout>
-    {@render children()}
+    {@render children?.()}
   </CourseLayout>
 {/if}

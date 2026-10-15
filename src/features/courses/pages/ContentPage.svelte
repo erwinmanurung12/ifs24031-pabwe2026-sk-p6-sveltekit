@@ -1,72 +1,187 @@
 <script lang="ts">
-  import { ArrowLeft, CircleCheck } from "lucide-svelte";
-  import { link } from "../../../helpers/navHelper";
-  import { showErrorDialog, showSuccessDialog } from "../../../helpers/toolsHelper";
-  import { content, isLoading, isContentMutating, fetchContent, setLearned, isLearned, getYoutubeId } from "../states/coursesStore";
+  import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/state";
+  import { coursesStore } from "../states/coursesStore";
+  import {
+    ArrowLeft,
+    CheckCircle2,
+    Circle,
+    ChevronLeft,
+    ChevronRight,
+    LoaderCircle,
+  } from "lucide-svelte";
+  import type { CourseContent } from "../api/courseApi";
 
-  let { courseId, contentId } = $props();
+  export let courseId: string | number | null = null;
+  export let contentId: string | number | null = null;
 
-  const videoId = $derived(getYoutubeId($content?.youtube));
-  const learned = $derived(isLearned($content));
+  let activeCourseId: string | number | null = null;
+  let activeContentId: string | number | null = null;
 
-  $effect(() => {
-    fetchContent(contentId);
+  $: course = $coursesStore.course;
+  $: content = $coursesStore.courseContent;
+
+  $: {
+    const cId = courseId || page?.params?.courseId || null;
+    const ctId = contentId || page?.params?.contentId || null;
+    activeCourseId = cId;
+    activeContentId = ctId;
+  }
+
+  onMount(() => {
+    if (activeCourseId) {
+      coursesStore.asyncSetCourse(activeCourseId);
+    }
+    if (activeContentId) {
+      coursesStore.asyncSetCourseContent(activeContentId);
+    }
   });
 
-  async function toggleLearned() {
-    const res = await setLearned($content.id, learned ? 0 : 1);
-    if (res.success) await showSuccessDialog(learned ? "Materi ditandai belum selesai." : "Materi ditandai selesai. Kerja bagus!");
-    else await showErrorDialog(res.message);
+  $: if ($coursesStore.isCourseContentLearn) {
+    coursesStore.setIsCourseContentLearn(false);
+    if ($coursesStore.isCourseContentLearned && activeContentId) {
+      coursesStore.setIsCourseContentLearned(false);
+      coursesStore.asyncSetCourseContent(activeContentId);
+      if (activeCourseId) {
+        coursesStore.asyncSetCourse(activeCourseId);
+      }
+    }
+  }
+
+  function getEmbedUrl(youtube: string): string {
+    if (!youtube) return "";
+    if (youtube.includes("youtube.com/embed/")) {
+      return youtube;
+    }
+    const match = youtube.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
+    if (match && match[1]) {
+      return `https://www.youtube.com/embed/${match[1]}`;
+    }
+    return `https://www.youtube.com/embed/${youtube}`;
+  }
+
+  function handleToggleLearn() {
+    if (!content?.id) return;
+    const newStatus = !content.my_status_finished;
+    coursesStore.asyncSetIsCourseContentLearn(content.id, newStatus);
+  }
+
+  $: contentsList = course?.contents || [];
+  $: currentIndex = contentsList.findIndex((c: CourseContent) => String(c.id) === String(activeContentId));
+  $: prevContent = currentIndex > 0 ? contentsList[currentIndex - 1] : null;
+  $: nextContent = currentIndex >= 0 && currentIndex < contentsList.length - 1 ? contentsList[currentIndex + 1] : null;
+
+  function navigateTo(id: number) {
+    if (activeCourseId) {
+      goto(`/courses/${activeCourseId}/contents/${id}`);
+    }
   }
 </script>
 
-<svelte:head>
-  <title>{$content ? `${$content.title} - Delcom Courses` : "Materi - Delcom Courses"}</title>
-</svelte:head>
+<div class="space-y-6 animate-in fade-in duration-300">
+  <!-- Top Navigation Bar -->
+  <div class="flex items-center justify-between gap-4 flex-wrap">
+    <button
+      type="button"
+      data-testid="back-to-course-btn"
+      on:click={() => {
+        if (activeCourseId) {
+          goto(`/courses/${activeCourseId}`);
+        } else {
+          goto("/");
+        }
+      }}
+      class="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+    >
+      <ArrowLeft size={16} />
+      <span>Kembali ke Detail Kursus</span>
+    </button>
 
-<a href={`/courses/${courseId}`} use:link class="inline-flex min-h-11 items-center gap-2 font-semibold text-blue-800 underline">
-  <ArrowLeft size={18} aria-hidden="true" />
-  <span>Kembali ke kursus</span>
-</a>
-
-{#if $isLoading}
-  <p role="status" class="mt-4 text-slate-700">Memuat materi...</p>
-{:else if !$content}
-  <section class="mt-6 rounded-xl border border-dashed border-slate-400 bg-white p-8 text-center">
-    <h1 class="text-2xl font-bold text-slate-900">Materi tidak ditemukan</h1>
-    <p class="mt-2 text-slate-700">Materi ini mungkin sudah dihapus.</p>
-  </section>
-{:else}
-  <article class="mt-4 space-y-4">
-    <h1 class="text-3xl font-extrabold text-slate-900">{$content.title}</h1>
-
-    {#if videoId}
-      <div class="aspect-video overflow-hidden rounded-2xl bg-slate-900">
-        <iframe
-          src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-          title={`Video materi: ${$content.title}`}
-          loading="lazy"
-          allow="encrypted-media; picture-in-picture; fullscreen"
-          referrerpolicy="strict-origin-when-cross-origin"
-          allowfullscreen
-          class="h-full w-full border-0"
-        ></iframe>
-      </div>
-    {:else}
-      <p class="rounded-xl border border-dashed border-slate-400 bg-white p-6 text-slate-700">
-        Tautan video tidak dapat diputar di sini.
-        {#if $content.youtube}
-          <a href={$content.youtube} target="_blank" rel="noopener noreferrer" class="font-semibold text-blue-800 underline">Buka tautan<span class="sr-only"> (tab baru)</span></a>
+    {#if content}
+      <button
+        type="button"
+        data-testid="toggle-learn-btn"
+        on:click={handleToggleLearn}
+        class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-xs {content.my_status_finished ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200' : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-600/25'}"
+      >
+        {#if content.my_status_finished}
+          <CheckCircle2 size={16} class="text-emerald-600" />
+          <span>Tandai Belum Selesai</span>
+        {:else}
+          <Circle size={16} />
+          <span>Tandai Sudah Selesai</span>
         {/if}
-      </p>
-    {/if}
-
-    <div class="flex flex-wrap items-center gap-3">
-      <button type="button" class={learned ? "btn btn-secondary" : "btn btn-primary"} onclick={toggleLearned} disabled={$isContentMutating}>
-        <CircleCheck size={18} aria-hidden="true" />
-        <span>{learned ? "Tandai belum selesai" : "Tandai selesai"}</span>
       </button>
-      <p role="status" class="text-sm font-medium text-slate-700">{learned ? "Status: selesai" : "Status: belum selesai"}</p>
+    {/if}
+  </div>
+
+  {#if !content}
+    <div class="flex flex-col items-center justify-center py-24 text-slate-400">
+      <LoaderCircle size={36} class="animate-spin text-indigo-600 mb-3" />
+      <p class="text-sm font-medium">Memuat video pembelajaran...</p>
     </div>
-  </article>
-{/if}
+  {:else}
+    <!-- Video Player Container -->
+    <div class="bg-black rounded-3xl overflow-hidden shadow-2xl aspect-video w-full relative">
+      <iframe
+        data-testid="video-iframe"
+        src={getEmbedUrl(content.youtube)}
+        title={content.title}
+        class="w-full h-full border-0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen
+      ></iframe>
+    </div>
+
+    <!-- Video Info Header Card -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 sm:p-8 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-indigo-600 mb-1 block">
+            {course?.title || "Materi Pembelajaran"}
+          </span>
+          <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            {content.title}
+          </h1>
+        </div>
+
+        {#if content.my_status_finished}
+          <div class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200/60 self-start sm:self-auto">
+            <CheckCircle2 size={15} />
+            <span>Selesai Dipelajari</span>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Playlist / Navigation Buttons (Prev / Next) -->
+      <div class="pt-6 border-t border-slate-100 flex items-center justify-between gap-4 flex-wrap">
+        {#if prevContent}
+          <button
+            type="button"
+            data-testid="prev-content-btn"
+            on:click={() => navigateTo(prevContent.id)}
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+          >
+            <ChevronLeft size={16} />
+            <span>Sebelumnya: {prevContent.title}</span>
+          </button>
+        {:else}
+          <div></div>
+        {/if}
+
+        {#if nextContent}
+          <button
+            type="button"
+            data-testid="next-content-btn"
+            on:click={() => navigateTo(nextContent.id)}
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition-colors shadow-sm ml-auto"
+          >
+            <span>Selanjutnya: {nextContent.title}</span>
+            <ChevronRight size={16} />
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
+</div>

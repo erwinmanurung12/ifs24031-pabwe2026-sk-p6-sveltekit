@@ -1,57 +1,75 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { page } from "$app/state";
-  import Navbar from "../components/Navbar.svelte";
-  import Sidebar from "../components/Sidebar.svelte";
-  import { go } from "../../../helpers/navHelper";
-  import { token, sessionReady, profile, loadProfile } from "../../auth/states/authStore";
+  import NavbarComponent from "../components/NavbarComponent.svelte";
+  import SidebarComponent from "../components/SidebarComponent.svelte";
+  import { usersStore } from "../../users/states/usersStore";
+  import { authStore } from "../../auth/states/authStore";
+  import apiHelper from "../../../helpers/apiHelper";
+  import { goto } from "$app/navigation";
 
-  let { children } = $props();
-  let mounted = $state(false);
-  let menuOpen = $state(false);
-  let loadingProfile = false;
+  let isSidebarOpen: boolean = false;
 
-  const path = $derived(page.url.pathname);
+  $: profile = $usersStore.profile;
 
+  // 1. Jalankan sekali untuk mengecek apakah pengguna sudah login
   onMount(() => {
-    mounted = true;
-  });
-
-  $effect(() => {
-    void path;
-    menuOpen = false;
-  });
-
-  $effect(() => {
-    if (mounted && $sessionReady && !$token) go("/auth/login", { replace: true });
-  });
-
-  $effect(() => {
-    if (mounted && $token && !$profile && !loadingProfile) {
-      loadingProfile = true;
-      loadProfile().finally(() => (loadingProfile = false));
+    const authToken = apiHelper.getAccessToken();
+    if (authToken) {
+      usersStore.asyncSetProfile();
+    } else {
+      goto("/auth/login");
     }
   });
+
+  // 2. Jika proses pengambilan profil selesai dan tidak ada profile, arahkan ke login
+  $: if ($usersStore.isProfile) {
+    usersStore.setIsProfile(false);
+    if (!profile) {
+      apiHelper.putAccessToken("");
+      goto("/auth/login");
+    }
+  }
+
+  // 3. Efek setelah logout
+  $: if ($authStore.isAuthLogout) {
+    authStore.setIsAuthLogout(false);
+    usersStore.setProfile(null);
+    goto("/auth/login");
+  }
+
+  function handleLogout() {
+    authStore.asyncSetIsAuthLogout();
+  }
 </script>
 
-{#if mounted && $token}
-  <a
-    href="#main"
-    class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2 focus:font-semibold focus:text-blue-800 focus:shadow-lg"
-  >Lewati ke konten utama</a>
-
-  <div class="min-h-screen bg-slate-50">
-    <Navbar {menuOpen} onToggle={() => (menuOpen = !menuOpen)} />
-    <div class="lg:flex">
-      <Sidebar {path} open={menuOpen} />
-      <main id="main" tabindex="-1" class="mx-auto w-full min-w-0 max-w-6xl flex-1 p-4 focus:outline-none sm:p-6 lg:p-8">
-        {@render children()}
-      </main>
+{#if !profile}
+  <div class="min-h-screen flex items-center justify-center bg-slate-50">
+    <div class="flex flex-col items-center gap-3">
+      <div class="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      <p class="text-sm font-medium text-slate-600">Memuat sesi pengguna...</p>
     </div>
   </div>
 {:else}
-  <main id="main" class="grid min-h-screen place-items-center p-6">
-    <h1 class="sr-only">Delcom Courses</h1>
-    <p role="status" class="text-slate-700">Memuat...</p>
-  </main>
+  <div class="min-h-screen bg-slate-50 text-slate-800">
+    <NavbarComponent
+      {profile}
+      {isSidebarOpen}
+      onLogout={handleLogout}
+      onToggleSidebar={() => (isSidebarOpen = !isSidebarOpen)}
+      on:logout={handleLogout}
+      on:toggle-sidebar={() => (isSidebarOpen = !isSidebarOpen)}
+    />
+
+    <SidebarComponent
+      {isSidebarOpen}
+      onCloseMobile={() => (isSidebarOpen = false)}
+      on:close-mobile={() => (isSidebarOpen = false)}
+    />
+
+    <main class="pt-16 md:pl-64 transition-all">
+      <div class="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto">
+        <slot />
+      </div>
+    </main>
+  </div>
 {/if}

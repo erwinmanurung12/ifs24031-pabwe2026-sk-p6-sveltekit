@@ -1,119 +1,289 @@
 <script lang="ts">
-  import Field from "../../common/components/Field.svelte";
-  import FileInput from "../../common/components/FileInput.svelte";
-  import { useInput } from "../../../hooks/useInput";
-  import { showSuccessDialog, showErrorDialog, formatDate } from "../../../helpers/toolsHelper";
-  import { profile, loadProfile } from "../../auth/states/authStore";
-  import { putMe, postPhoto, putPassword } from "../api/userApi";
+  import { usersStore } from "../states/usersStore";
+  import { showErrorDialog } from "../../../helpers/toolsHelper";
+  import { User, Camera, Check, LoaderCircle, ShieldCheck } from "lucide-svelte";
 
-  const { value: name } = useInput("");
-  const { value: email } = useInput("");
-  const { value: currentPassword, reset: resetCurrent } = useInput("");
-  const { value: newPassword, reset: resetNew } = useInput("");
-  const { value: confirmPassword, reset: resetConfirm } = useInput("");
+  $: profile = $usersStore.profile;
 
-  let photo = $state(null);
-  let savingProfile = $state(false);
-  let savingPhoto = $state(false);
-  let savingPassword = $state(false);
-  let passwordError = $state("");
+  let name: string = "";
+  let email: string = "";
+  let oldPassword: string = "";
+  let newPassword: string = "";
+  let newPasswordConfirmation: string = "";
 
-  $effect(() => {
-    if ($profile) {
-      name.set($profile.name ?? "");
-      email.set($profile.email ?? "");
-    }
-  });
+  let loadingProfile: boolean = false;
+  let loadingPhoto: boolean = false;
+  let loadingPassword: boolean = false;
 
-  async function saveProfile(event) {
-    event.preventDefault();
-    savingProfile = true;
-    const res = await putMe({ name: $name, email: $email });
-    savingProfile = false;
-    if (!res.success) return showErrorDialog(res.message);
-    await loadProfile();
-    await showSuccessDialog(res.message);
+  $: if (profile) {
+    name = profile.name || "";
+    email = profile.email || "";
   }
 
-  async function savePhoto(event) {
-    event.preventDefault();
-    if (!photo) return showErrorDialog("Pilih berkas foto terlebih dahulu.");
-    savingPhoto = true;
-    const res = await postPhoto(photo);
-    savingPhoto = false;
-    if (!res.success) return showErrorDialog(res.message);
-    await loadProfile();
-    await showSuccessDialog(res.message);
+  $: if ($usersStore.isChangeProfile) {
+    loadingProfile = false;
+    usersStore.setIsChangeProfile(false);
   }
 
-  async function savePassword(event) {
-    event.preventDefault();
-    passwordError = "";
-    if ($newPassword !== $confirmPassword) {
-      passwordError = "Konfirmasi kata sandi tidak sama dengan kata sandi baru.";
+  $: if ($usersStore.isChangeProfilePhoto) {
+    loadingPhoto = false;
+    usersStore.setIsChangeProfilePhoto(false);
+  }
+
+  $: if ($usersStore.isChangeProfilePassword) {
+    loadingPassword = false;
+    usersStore.setIsChangeProfilePassword(false);
+    oldPassword = "";
+    newPassword = "";
+    newPasswordConfirmation = "";
+  }
+
+  function handleUpdateProfile() {
+    if (!name.trim()) {
+      showErrorDialog("Nama tidak boleh kosong!");
       return;
     }
-    savingPassword = true;
-    const res = await putPassword({ password: $currentPassword, newPassword: $newPassword });
-    savingPassword = false;
-    if (!res.success) return showErrorDialog(res.message);
-    resetCurrent();
-    resetNew();
-    resetConfirm();
-    await showSuccessDialog(res.message);
+    if (!email.trim()) {
+      showErrorDialog("Email tidak boleh kosong!");
+      return;
+    }
+    loadingProfile = true;
+    usersStore.asyncPutProfile(name.trim(), email.trim());
+  }
+
+  function handlePhotoUpload(e: Event) {
+    const target = e.target as HTMLInputElement;
+    const file = target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showErrorDialog("Pilih file gambar yang valid!");
+      return;
+    }
+
+    if (file.size > 3 * 1024 * 1024) {
+      showErrorDialog("Ukuran file foto maksimal 3MB!");
+      return;
+    }
+
+    loadingPhoto = true;
+    usersStore.asyncPostProfilePhoto(file);
+  }
+
+  function handleUpdatePassword() {
+    if (!oldPassword) {
+      showErrorDialog("Kata sandi lama wajib diisi!");
+      return;
+    }
+    if (!newPassword || newPassword.length < 6) {
+      showErrorDialog("Kata sandi baru minimal 6 karakter!");
+      return;
+    }
+    if (newPassword !== newPasswordConfirmation) {
+      showErrorDialog("Konfirmasi kata sandi tidak cocok!");
+      return;
+    }
+
+    loadingPassword = true;
+    usersStore.asyncPutProfilePassword(
+      oldPassword,
+      newPassword,
+      newPasswordConfirmation
+    );
   }
 </script>
 
-<svelte:head>
-  <title>Profil - Delcom Courses</title>
-</svelte:head>
-
-<h1 class="text-3xl font-extrabold text-slate-900">Profil</h1>
-<p class="mt-1 text-slate-700">Kelola data diri, foto, dan kata sandi akunmu.</p>
-
-<div class="mt-6 grid gap-6 lg:grid-cols-2">
-  <section aria-labelledby="profile-data" class="rounded-2xl border border-slate-200 bg-white p-6">
-    <h2 id="profile-data" class="text-xl font-bold text-slate-900">Data diri</h2>
-    {#if $profile}
-      <p class="mt-1 text-sm text-slate-700">Bergabung sejak {formatDate($profile.created_at)}</p>
-    {/if}
-    <form class="mt-4 space-y-4" onsubmit={saveProfile}>
-      <Field id="profile-name" label="Nama lengkap" required autocomplete="name" bind:value={$name} />
-      <Field id="profile-email" label="Email" type="email" required autocomplete="email" bind:value={$email} />
-      <button type="submit" class="btn btn-primary" disabled={savingProfile}>{savingProfile ? "Menyimpan..." : "Simpan perubahan"}</button>
-    </form>
-  </section>
-
-  <section aria-labelledby="profile-photo" class="rounded-2xl border border-slate-200 bg-white p-6">
-    <h2 id="profile-photo" class="text-xl font-bold text-slate-900">Foto profil</h2>
-    <div class="mt-4 flex items-center gap-4">
-      {#if $profile?.photo}
-        <img src={$profile.photo} alt={`Foto profil ${$profile.name}`} width="80" height="80" class="h-20 w-20 rounded-full object-cover" />
-      {:else}
-        <span aria-hidden="true" class="grid h-20 w-20 place-items-center rounded-full bg-blue-100 text-3xl font-bold text-blue-900">
-          {($profile?.name ?? "?").charAt(0).toUpperCase()}
-        </span>
-        <p class="text-sm text-slate-700">Belum ada foto profil.</p>
-      {/if}
+{#if !profile}
+  <div class="flex flex-col items-center justify-center py-24">
+    <LoaderCircle size={36} class="text-indigo-600 animate-spin mb-2" />
+    <p class="text-sm font-medium text-slate-600">Memuat data profil...</p>
+  </div>
+{:else}
+  <div class="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
+    <div>
+      <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+        Profil Akun
+      </h1>
+      <p class="text-sm text-slate-500 mt-1">
+        Kelola informasi identitas, foto profil, dan keamanan akun Anda.
+      </p>
     </div>
-    <form class="mt-4 space-y-4" onsubmit={savePhoto}>
-      <FileInput id="profile-photo-file" label="Pilih foto baru" required hint="Format gambar, misalnya JPG atau PNG." onchange={(file) => (photo = file)} />
-      <button type="submit" class="btn btn-primary" disabled={savingPhoto}>{savingPhoto ? "Mengunggah..." : "Unggah foto"}</button>
-    </form>
-  </section>
 
-  <section aria-labelledby="profile-password" class="rounded-2xl border border-slate-200 bg-white p-6 lg:col-span-2">
-    <h2 id="profile-password" class="text-xl font-bold text-slate-900">Ubah kata sandi</h2>
-    <form class="mt-4 grid max-w-xl gap-4" onsubmit={savePassword}>
-      <Field id="password-current" label="Kata sandi saat ini" type="password" required autocomplete="current-password" bind:value={$currentPassword} />
-      <Field id="password-new" label="Kata sandi baru" type="password" required autocomplete="new-password" bind:value={$newPassword} />
-      <Field id="password-confirm" label="Konfirmasi kata sandi baru" type="password" required autocomplete="new-password" bind:value={$confirmPassword} />
-      {#if passwordError}
-        <p role="alert" class="rounded-lg bg-red-50 px-3 py-2 text-sm font-medium text-red-800">{passwordError}</p>
-      {/if}
-      <div>
-        <button type="submit" class="btn btn-primary" disabled={savingPassword}>{savingPassword ? "Menyimpan..." : "Ubah kata sandi"}</button>
+    <!-- Profile Card Header -->
+    <div class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center gap-6">
+      <div class="relative group">
+        {#if profile.photo}
+          <img
+            src={profile.photo}
+            alt={profile.name}
+            class="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md ring-2 ring-indigo-100"
+          />
+        {:else}
+          <div class="w-24 h-24 rounded-full bg-gradient-to-tr from-indigo-600 to-cyan-500 text-white flex items-center justify-center font-bold text-3xl shadow-md">
+            {profile.name ? profile.name.charAt(0).toUpperCase() : "U"}
+          </div>
+        {/if}
+
+        <label
+          data-testid="upload-profile-photo-btn"
+          class="absolute bottom-0 right-0 p-2 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-md cursor-pointer transition-transform hover:scale-105"
+          title="Ubah Foto Profil"
+        >
+          {#if loadingPhoto}
+            <LoaderCircle size={16} class="animate-spin" />
+          {:else}
+            <Camera size={16} />
+          {/if}
+          <input
+            type="file"
+            data-testid="profile-photo-file-input"
+            accept="image/*"
+            on:change={handlePhotoUpload}
+            class="hidden"
+          />
+        </label>
       </div>
-    </form>
-  </section>
-</div>
+
+      <div class="text-center sm:text-left space-y-1">
+        <h2 class="text-xl font-bold text-slate-800">{profile.name}</h2>
+        <p class="text-sm text-slate-500">{profile.email}</p>
+        <div class="pt-2">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200/60">
+            <Check size={14} /> Terverifikasi
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Form Biodata -->
+      <div class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs space-y-5">
+        <div class="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+          <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <User size={18} />
+          </div>
+          <h3 class="font-bold text-slate-800">Ubah Biodata</h3>
+        </div>
+
+        <form on:submit|preventDefault={handleUpdateProfile} class="space-y-4">
+          <div>
+            <label for="profile-name-input" class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Nama Lengkap
+            </label>
+            <input
+              id="profile-name-input"
+              type="text"
+              data-testid="profile-name-input"
+              bind:value={name}
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+              required
+            />
+          </div>
+
+          <div>
+            <label for="profile-email-input" class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Alamat Email
+            </label>
+            <input
+              id="profile-email-input"
+              type="email"
+              data-testid="profile-email-input"
+              bind:value={email}
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+              required
+            />
+          </div>
+
+          <div class="pt-2">
+            <button
+              type="submit"
+              data-testid="submit-profile-btn"
+              disabled={loadingProfile}
+              class="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md shadow-indigo-600/25 transition-all disabled:opacity-60"
+            >
+              {#if loadingProfile}
+                <LoaderCircle size={18} class="animate-spin" />
+                <span>Menyimpan Perubahan...</span>
+              {:else}
+                <span>Simpan Perubahan</span>
+              {/if}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- Form Ganti Password -->
+      <div class="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs space-y-5">
+        <div class="flex items-center gap-2.5 pb-2 border-b border-slate-100">
+          <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+            <ShieldCheck size={18} />
+          </div>
+          <h3 class="font-bold text-slate-800">Keamanan & Password</h3>
+        </div>
+
+        <form on:submit|preventDefault={handleUpdatePassword} class="space-y-4">
+          <div>
+            <label for="current-password-input" class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Kata Sandi Saat Ini
+            </label>
+            <input
+              id="current-password-input"
+              type="password"
+              data-testid="current-password-input"
+              bind:value={oldPassword}
+              placeholder="••••••"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+              required
+            />
+          </div>
+
+          <div>
+            <label for="new-password-input" class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Kata Sandi Baru
+            </label>
+            <input
+              id="new-password-input"
+              type="password"
+              data-testid="new-password-input"
+              bind:value={newPassword}
+              placeholder="Minimal 6 karakter"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+              required
+            />
+          </div>
+
+          <div>
+            <label for="confirm-password-input" class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+              Ulangi Kata Sandi Baru
+            </label>
+            <input
+              id="confirm-password-input"
+              type="password"
+              data-testid="confirm-password-input"
+              bind:value={newPasswordConfirmation}
+              placeholder="Konfirmasi kata sandi"
+              class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+              required
+            />
+          </div>
+
+          <div class="pt-2">
+            <button
+              type="submit"
+              data-testid="submit-password-btn"
+              disabled={loadingPassword}
+              class="w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 active:bg-slate-950 rounded-xl shadow-md transition-all disabled:opacity-60"
+            >
+              {#if loadingPassword}
+                <LoaderCircle size={18} class="animate-spin" />
+                <span>Memperbarui Password...</span>
+              {:else}
+                <span>Perbarui Password</span>
+              {/if}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{/if}

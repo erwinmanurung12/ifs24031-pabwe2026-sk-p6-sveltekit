@@ -1,132 +1,326 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { Plus, Trash2, Users as UsersIcon } from "lucide-svelte";
-  import Field from "../../common/components/Field.svelte";
+  import { goto } from "$app/navigation";
   import AddModal from "../modals/AddModal.svelte";
-  import { link } from "../../../helpers/navHelper";
-  import { showConfirmDialog, showErrorDialog, showSuccessDialog } from "../../../helpers/toolsHelper";
-  import { profile } from "../../auth/states/authStore";
-  import { courses, isLoading, isDeleting, isDeletingAll, fetchCourses, removeCourse, removeAllCourses, isOwnerOf } from "../states/coursesStore";
+  import ChangeModal from "../modals/ChangeModal.svelte";
+  import { coursesStore } from "../states/coursesStore";
+  import { usersStore } from "../../users/states/usersStore";
+  import { showConfirmDialog } from "../../../helpers/toolsHelper";
+  import {
+    Plus,
+    GraduationCap,
+    BookOpen,
+    Users,
+    Star,
+    Eye,
+    Pencil,
+    Trash2,
+    Search,
+    LoaderCircle,
+  } from "lucide-svelte";
+  import type { Course } from "../api/courseApi";
 
-  let search = $state("");
-  let onlyMine = $state(false);
-  let showAdd = $state(false);
+  let loadingCourses: boolean = false;
+  let filter: string = "";
+  let searchQuery: string = "";
+  let showAddModal: boolean = false;
+  let showChangeModal: boolean = false;
+  let selectedCourseId: string | number | null = null;
 
-  const isMine = (item) => isOwnerOf(item, $profile?.id);
-
-  const visible = $derived(
-    $courses.filter((item) => {
-      const keyword = search.trim().toLowerCase();
-      const matches =
-        !keyword || item.title?.toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword);
-      return matches && (!onlyMine || isMine(item));
-    })
-  );
+  $: profile = $usersStore.profile;
+  $: courses = $coursesStore.courses;
 
   onMount(() => {
-    fetchCourses();
+    loadCourses();
   });
 
-  async function handleDelete(item) {
-    const ok = await showConfirmDialog(`Hapus kursus "${item.title}"? Tindakan ini tidak dapat dibatalkan.`, {
-      title: "Hapus Kursus",
-      confirmText: "Hapus",
+  function loadCourses() {
+    loadingCourses = true;
+    Promise.resolve(coursesStore.asyncSetCourses(filter)).finally(() => {
+      loadingCourses = false;
     });
-    if (!ok) return;
-    const res = await removeCourse(item.id);
-    if (res.success) await showSuccessDialog(res.message);
-    else await showErrorDialog(res.message);
   }
 
-  async function handleDeleteAll() {
-    const ok = await showConfirmDialog("Semua kursus milikmu akan dihapus. Lanjutkan?", {
-      title: "Hapus Semua",
-      confirmText: "Hapus semua",
-    });
-    if (!ok) return;
-    const res = await removeAllCourses();
-    if (res.success) await showSuccessDialog(res.message);
-    else await showErrorDialog(res.message);
+  let prevFilter = filter;
+  $: if (filter !== prevFilter) {
+    prevFilter = filter;
+    loadCourses();
   }
+
+  $: if ($coursesStore.isCourseDeleted) {
+    coursesStore.setIsCourseDeleted(false);
+    loadCourses();
+  }
+
+  $: if ($coursesStore.isCourseDeletedAll) {
+    coursesStore.setIsCourseDeletedAll(false);
+    loadCourses();
+  }
+
+  function handleEditCourse(courseId: string | number) {
+    selectedCourseId = courseId;
+    showChangeModal = true;
+  }
+
+  async function handleDeleteCourse(courseId: string | number) {
+    const result = await showConfirmDialog("Apakah Anda yakin ingin menghapus kursus ini?");
+    if (result.isConfirmed) {
+      coursesStore.asyncSetIsCourseDelete(courseId);
+    }
+  }
+
+  async function handleDeleteAllCourses() {
+    const result = await showConfirmDialog(
+      "Apakah Anda yakin ingin menghapus SEMUA kursus Anda? Tindakan ini tidak dapat dibatalkan!"
+    );
+    if (result.isConfirmed) {
+      coursesStore.asyncSetIsCourseDeleteAll();
+    }
+  }
+
+  $: filteredCourses = courses.filter((course: Course) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    const title = course.title.toLowerCase();
+    const description = course.description.toLowerCase();
+    const author = course.author ? course.author.name.toLowerCase() : "";
+    return title.includes(q) || description.includes(q) || author.includes(q);
+  });
+
+  $: totalCount = courses.length;
+  $: myCoursesCount = profile
+    ? courses.filter((c: Course) => c.user_id === profile.id).length
+    : 0;
+  $: enrolledCount = profile
+    ? courses.filter((c: Course) => c.students && c.students.includes(profile.id)).length
+    : 0;
 </script>
 
-<svelte:head>
-  <title>Semua Kursus - Delcom Courses</title>
-</svelte:head>
+{#if profile}
+  <div class="space-y-8 animate-in fade-in duration-300">
+    <!-- Header Banner -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          Daftar Kursus
+        </h1>
+        <p class="text-sm text-slate-500 mt-1">
+          Eksplorasi modul pembelajaran, tingkatkan kompetensi Anda, dan kelola kursus Anda.
+        </p>
+      </div>
+      <div class="flex items-center gap-2.5 self-start sm:self-auto flex-wrap">
+        <button
+          type="button"
+          data-testid="delete-all-courses-btn"
+          on:click={handleDeleteAllCourses}
+          class="inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl font-semibold text-sm text-red-700 bg-red-50 hover:bg-red-100 active:bg-red-200 transition-all"
+        >
+          <Trash2 size={16} />
+          <span>Hapus Semua</span>
+        </button>
 
-<div class="flex flex-wrap items-start justify-between gap-4">
-  <div>
-    <h1 class="text-3xl font-extrabold text-slate-900">Semua Kursus</h1>
-    <p class="mt-1 text-slate-700">Temukan kursus baru atau kelola kursus milikmu.</p>
-  </div>
-  <div class="flex flex-wrap gap-3">
-    {#if $courses.some(isMine)}
-      <button type="button" class="btn btn-secondary" onclick={handleDeleteAll} disabled={$isDeletingAll}>
-        <Trash2 size={18} aria-hidden="true" />
-        <span>{$isDeletingAll ? "Menghapus..." : "Hapus semua"}</span>
-      </button>
-    {/if}
-    <button type="button" class="btn btn-primary" onclick={() => (showAdd = true)}>
-      <Plus size={18} aria-hidden="true" />
-      <span>Tambah Kursus</span>
-    </button>
-  </div>
-</div>
+        <button
+          type="button"
+          data-testid="add-course-btn"
+          on:click={() => (showAddModal = true)}
+          class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-md shadow-indigo-600/25 transition-all"
+        >
+          <Plus size={18} strokeWidth={2.5} />
+          <span>Tambah Kursus</span>
+        </button>
+      </div>
+    </div>
 
-<div class="mt-6 flex flex-wrap items-end gap-4">
-  <div class="w-full sm:max-w-sm">
-    <Field id="search-course" label="Cari kursus" type="search" autocomplete="off" placeholder="Ketik judul atau deskripsi" bind:value={search} />
-  </div>
-  <label class="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-slate-800">
-    <input type="checkbox" bind:checked={onlyMine} class="h-5 w-5 accent-blue-700" />
-    Hanya milik saya
-  </label>
-</div>
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Total Kursus
+          </p>
+          <h3 class="text-3xl font-black text-slate-800 mt-1">{totalCount}</h3>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <BookOpen size={26} strokeWidth={2} />
+        </div>
+      </div>
 
-<section class="mt-6" aria-labelledby="list-heading">
-  <h2 id="list-heading" class="text-xl font-bold text-slate-900">Daftar Kursus</h2>
+      <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Kursus Saya
+          </p>
+          <h3 class="text-3xl font-black text-indigo-600 mt-1">{myCoursesCount}</h3>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+          <GraduationCap size={26} strokeWidth={2} />
+        </div>
+      </div>
 
-  {#if $isLoading}
-    <p role="status" class="mt-4 text-slate-700">Memuat kursus...</p>
-  {:else if visible.length === 0}
-    <p class="mt-4 rounded-xl border border-dashed border-slate-400 bg-white p-6 text-slate-700">
-      Belum ada kursus yang cocok. Coba ubah pencarian atau tambahkan kursus baru.
-    </p>
-  {:else}
-    <ul class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      {#each visible as item (item.id)}
-        <li class="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-          {#if item.cover}
-            <img src={item.cover} alt="" width="640" height="360" loading="lazy" class="aspect-video w-full object-cover" />
-          {/if}
-          <div class="flex flex-1 flex-col gap-2 p-4">
-            <h3 class="text-lg font-bold text-slate-900">
-              <a href={`/courses/${item.id}`} use:link class="underline decoration-slate-400 underline-offset-2 hover:text-blue-800">{item.title}</a>
-            </h3>
-            {#if item.description}
-              <p class="line-clamp-3 text-sm text-slate-700">{item.description}</p>
-            {/if}
-            {#if Array.isArray(item.students)}
-              <p class="mt-auto inline-flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                <UsersIcon size={16} aria-hidden="true" />
-                <span>{item.students.length} peserta</span>
-              </p>
-            {/if}
-          </div>
-          {#if isMine(item)}
-            <div class="border-t border-slate-200 p-3">
-              <button type="button" class="btn btn-secondary" onclick={() => handleDelete(item)} disabled={$isDeleting} aria-label={`Hapus kursus ${item.title}`}>
-                <Trash2 size={18} aria-hidden="true" />
-                <span>Hapus</span>
-              </button>
+      <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-xs flex items-center justify-between">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Diikuti
+          </p>
+          <h3 class="text-3xl font-black text-emerald-600 mt-1">{enrolledCount}</h3>
+        </div>
+        <div class="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <Users size={26} strokeWidth={2} />
+        </div>
+      </div>
+    </div>
+
+    <!-- Filter & Search Bar -->
+    <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="relative w-full sm:w-80">
+        <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+          <Search size={18} />
+        </div>
+        <input
+          type="text"
+          data-testid="course-search-input"
+          bind:value={searchQuery}
+          placeholder="Cari kursus atau pengajar..."
+          class="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all text-sm"
+        />
+      </div>
+
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <select
+          data-testid="course-filter-select"
+          aria-label="Filter kursus"
+          bind:value={filter}
+          class="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition-all"
+        >
+          <option value="">Semua Kursus</option>
+          <option value="1">Kursus Saya</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Courses Grid -->
+    {#if loadingCourses}
+      <div class="flex flex-col items-center justify-center py-20 text-slate-400">
+        <LoaderCircle size={36} class="animate-spin text-indigo-600 mb-3" />
+        <p class="text-sm font-medium">Memuat data kursus...</p>
+      </div>
+    {:else if filteredCourses.length === 0}
+      <div class="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center">
+        <div class="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-4">
+          <GraduationCap size={32} />
+        </div>
+        <h4 class="text-base font-bold text-slate-800">Tidak ada kursus ditemukan</h4>
+        <p class="text-sm text-slate-500 max-w-sm mx-auto mt-1">
+          {searchQuery
+            ? "Coba gunakan kata kunci pencarian yang lain."
+            : "Belum ada kursus yang tersedia. Tambahkan kursus baru sekarang!"}
+        </p>
+      </div>
+    {:else}
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {#each filteredCourses as course (course.id)}
+          <div
+            data-testid={`course-card-${course.id}`}
+            class="bg-white rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition-all overflow-hidden flex flex-col justify-between"
+          >
+            <!-- Course Cover Image / Gradient Header -->
+            <div class="h-44 bg-gradient-to-tr from-indigo-700 to-indigo-900 relative overflow-hidden">
+              {#if course.cover}
+                <img
+                  src={course.cover}
+                  alt={course.title}
+                  class="w-full h-full object-cover"
+                />
+              {:else}
+                <div class="w-full h-full flex flex-col items-center justify-center text-white/40">
+                  <GraduationCap size={48} strokeWidth={1.5} />
+                </div>
+              {/if}
+              <div class="absolute top-3 right-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/70 backdrop-blur-md text-amber-400 text-xs font-bold">
+                <Star size={13} class="fill-amber-400" />
+                <span>{course.avg_ratings ? Number(course.avg_ratings).toFixed(1) : "0.0"}</span>
+              </div>
             </div>
-          {/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</section>
 
-{#if showAdd}
-  <AddModal onclose={() => (showAdd = false)} />
+            <!-- Course Content Details -->
+            <div class="p-5 flex-1 flex flex-col justify-between">
+              <div>
+                <h3 class="text-base font-bold text-slate-900 line-clamp-1 mb-1">
+                  {course.title}
+                </h3>
+                <p class="text-xs text-slate-500 line-clamp-2 leading-relaxed mb-4">
+                  {course.description}
+                </p>
+              </div>
+
+              <div class="pt-4 border-t border-slate-100 space-y-3">
+                <div class="flex items-center justify-between text-xs text-slate-500">
+                  <span class="flex items-center gap-1">
+                    <Users size={14} class="text-slate-400" />
+                    {course.students ? course.students.length : 0} siswa
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <BookOpen size={14} class="text-slate-400" />
+                    {course.total_contents || (course.contents ? course.contents.length : 0)} modul
+                  </span>
+                </div>
+
+                <div class="flex items-center justify-between gap-2 pt-2">
+                  <button
+                    type="button"
+                    data-testid={`detail-course-btn-${course.id}`}
+                    on:click={() => goto(`/courses/${course.id}`)}
+                    class="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                  >
+                    <Eye size={14} />
+                    <span>Lihat Detail</span>
+                  </button>
+
+                  {#if course.user_id === profile.id}
+                    <button
+                      type="button"
+                      data-testid={`edit-course-btn-${course.id}`}
+                      on:click={() => handleEditCourse(course.id)}
+                      class="p-2 rounded-xl text-amber-600 hover:bg-amber-50 transition-colors"
+                      title="Ubah Kursus"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      data-testid={`delete-course-btn-${course.id}`}
+                      on:click={() => handleDeleteCourse(course.id)}
+                      class="p-2 rounded-xl text-red-600 hover:bg-red-50 transition-colors"
+                      title="Hapus Kursus"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
+  </div>
+
+  <AddModal
+    show={showAddModal}
+    onClose={() => (showAddModal = false)}
+    on:close={() => (showAddModal = false)}
+  />
+
+  <ChangeModal
+    show={showChangeModal}
+    courseId={selectedCourseId}
+    onClose={() => {
+      showChangeModal = false;
+      selectedCourseId = null;
+    }}
+    on:close={() => {
+      showChangeModal = false;
+      selectedCourseId = null;
+    }}
+  />
 {/if}

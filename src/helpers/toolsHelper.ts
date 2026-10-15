@@ -1,43 +1,70 @@
-// SweetAlert2 dimuat saat dibutuhkan agar bundel awal tetap kecil (skor Performance).
-async function getSwal() {
-  return (await import("sweetalert2")).default;
-}
+import Swal from "sweetalert2";
 
-const BUTTON_COLOR = "#1d4ed8";
-
-export async function showSuccessDialog(message, title = "Berhasil") {
-  const Swal = await getSwal();
-  return Swal.fire({ icon: "success", title, text: message, confirmButtonText: "Oke", confirmButtonColor: BUTTON_COLOR });
-}
-
-export async function showErrorDialog(message, title = "Gagal") {
-  const Swal = await getSwal();
-  return Swal.fire({ icon: "error", title, text: message, confirmButtonText: "Tutup", confirmButtonColor: BUTTON_COLOR });
-}
-
-export async function showWarningDialog(message, title = "Perhatian") {
-  const Swal = await getSwal();
-  return Swal.fire({ icon: "warning", title, text: message, confirmButtonText: "Mengerti", confirmButtonColor: BUTTON_COLOR });
-}
-
-export async function showConfirmDialog(message, { title = "Konfirmasi", confirmText = "Ya", cancelText = "Batal" } = {}) {
-  const Swal = await getSwal();
-  const result = await Swal.fire({
-    icon: "question",
-    title,
+export function showErrorDialog(message: string) {
+  return Swal.fire({
+    title: "Terjadi Kesalahan",
     text: message,
-    showCancelButton: true,
-    confirmButtonText: confirmText,
-    cancelButtonText: cancelText,
-    confirmButtonColor: BUTTON_COLOR,
-    cancelButtonColor: "#475569",
-    reverseButtons: true,
+    icon: "error",
+    confirmButtonText: "Tutup",
+    confirmButtonColor: "#ef4444",
+  }).then((result) => {
+    if (result.isConfirmed) {
+      Swal.close();
+    }
+    return result;
   });
-  return Boolean(result.isConfirmed);
 }
 
-export function formatDate(value) {
-  const date = new Date(value);
-  if (!value || Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "long", year: "numeric" }).format(date);
+export function showWarningDialog(message: string) {
+  return Swal.fire({
+    title: "Peringatan",
+    text: message,
+    icon: "warning",
+    confirmButtonText: "Tutup",
+    confirmButtonColor: "#f59e0b",
+  }).then((result) => {
+    if (result.isConfirmed) {
+      Swal.close();
+    }
+    return result;
+  });
+}
+
+export function showSuccessDialog(message: string) {
+  return Swal.fire({
+    title: "Tindakan Berhasil",
+    text: message,
+    icon: "success",
+    confirmButtonText: "Tutup",
+    confirmButtonColor: "#10b981",
+  }).then((result) => {
+    if (result.isConfirmed) {
+      Swal.close();
+    }
+    return result;
+  });
+}
+
+export function showConfirmDialog(message: string) {
+  return Swal.fire({
+    title: "Konfirmasi",
+    text: message,
+    icon: "question",
+    showCancelButton: true,
+    confirmButtonText: "Ya",
+    cancelButtonText: "Tidak",
+    confirmButtonColor: "#6366f1",
+    cancelButtonColor: "#94a3b8",
+  });
+}
+
+export function formatDate(date: string | number | Date | null | undefined): string {
+  if (!date) return "-";
+  return new Date(date).toLocaleString("id-ID", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

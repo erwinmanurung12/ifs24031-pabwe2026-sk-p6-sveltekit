@@ -1,48 +1,47 @@
-const TOKEN_KEY = "delcom_courses_token";
+const apiHelper = (() => {
+  async function fetchData(url: string, options: RequestInit = {}): Promise<Response> {
+    const urlQuery = url.includes("?") ? url.split("?")[1] : "";
+    const urlWithoutQuery = url.replace(`?${urlQuery}`, "");
+    const fixUrl = urlWithoutQuery.endsWith("/")
+      ? urlWithoutQuery.slice(0, -1)
+      : urlWithoutQuery;
+    const fullUrl = fixUrl + (urlQuery ? `?${urlQuery}` : "");
 
-export function getAccessToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function putAccessToken(token) {
-  try {
-    if (token) localStorage.setItem(TOKEN_KEY, token);
-    else localStorage.removeItem(TOKEN_KEY);
-  } catch {
-    // penyimpanan tidak tersedia
-  }
-}
-
-/**
- * Pembungkus fetch ke Delcom Open API.
- * Respons dianggap berhasil bila field "status" bernilai "success".
- */
-export async function apiRequest(path, { method = "GET", body = undefined, auth = true } = {}) {
-  const headers = {};
-  const isForm = typeof FormData !== "undefined" && body instanceof FormData;
-  if (body && !isForm) headers["Content-Type"] = "application/json";
-  const token = auth ? getAccessToken() : null;
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  try {
-    const res = await fetch(`${DELCOM_BASEURL}${path}`, {
-      method,
-      headers,
-      body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
-    });
-    const json = await res.json().catch(() => null);
-    const success = json?.status === "success";
-    return {
-      success,
-      status: res.status,
-      message: json?.message || (success ? "Berhasil" : "Terjadi kesalahan pada server"),
-      data: json?.data ?? null,
+    const token = getAccessToken();
+    const headers: Record<string, string> = {
+      ...((options.headers as Record<string, string>) || {}),
     };
-  } catch {
-    return { success: false, status: 0, message: "Tidak dapat terhubung ke server", data: null };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    return fetch(fullUrl, {
+      ...options,
+      mode: "cors",
+      headers,
+    });
   }
-}
+
+  function putAccessToken(token: string): void {
+    if (typeof localStorage === "undefined") return;
+    if (!token) {
+      localStorage.removeItem("accessToken");
+    } else {
+      localStorage.setItem("accessToken", token);
+    }
+  }
+
+  function getAccessToken(): string | null {
+    if (typeof localStorage === "undefined") return null;
+    return localStorage.getItem("accessToken");
+  }
+
+  return {
+    fetchData,
+    putAccessToken,
+    getAccessToken,
+  };
+})();
+
+export default apiHelper;

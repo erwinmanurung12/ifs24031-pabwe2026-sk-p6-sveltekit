@@ -2,26 +2,31 @@
 <html lang="id">
   <head>
     <meta charset="utf-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="icon" href="%sveltekit.assets%/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Delcom Courses</title>
-    <meta name="description" content="Delcom Courses: temukan kursus, tonton materi video, dan pantau progres belajarmu." />
-    <meta name="theme-color" content="#1d4ed8" />
+    <meta
+      name="description"
+      content="Aplikasi Course - kelola kursus, silabus, dan pengguna dalam satu tempat."
+    />
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Font dimuat tanpa memblokir render (skor Performance). -->
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap"
       media="print"
       onload="this.media='all'"
     />
     <noscript>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap"
+      />
     </noscript>
+
     %sveltekit.head%
   </head>
-  <body class="min-h-screen bg-slate-50 font-sans text-slate-900 antialiased">
+  <body data-sveltekit-preload-data="hover">
     <div style="display: contents">%sveltekit.body%</div>
   </body>
 </html>

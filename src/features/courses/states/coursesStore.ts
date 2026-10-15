@@ -1,183 +1,480 @@
 import { writable } from "svelte/store";
-import * as api from "../api/courseApi";
+import courseApi, { type Course, type CourseContent } from "../api/courseApi";
+import { showErrorDialog, showSuccessDialog } from "../../../helpers/toolsHelper";
 
-export const courses = writable<any[]>([]);
-export const course = writable<any>(null);
-export const content = writable<any>(null);
-export const isLoading = writable(false);
-
-// Bendera mutasi
-export const isAdding = writable(false);
-export const isChanging = writable(false);
-export const isChangingCover = writable(false);
-export const isDeleting = writable(false);
-export const isDeletingAll = writable(false);
-export const isJoining = writable(false);
-export const isRating = writable(false);
-export const isContentMutating = writable(false);
-
-// Pemilik: user_id kursus sama dengan id profil.
-export const isOwnerOf = (item, userId) => Boolean(item && userId) && item.user_id === userId;
-
-// Peserta: id pengguna ada di students (mendukung larik id maupun larik objek).
-export const isStudentOf = (item, userId) =>
-  Boolean(userId) &&
-  Array.isArray(item?.students) &&
-  item.students.some((student) => (typeof student === "object" && student !== null ? (student.user_id ?? student.id) : student) === userId);
-
-// CEK DOCS: nama field status belajar pada konten.
-export const isLearned = (item) => Number(item?.status ?? item?.learn_status ?? 0) === 1;
-
-export function getYoutubeId(url) {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1) || null;
-    if (parsed.hostname.endsWith("youtube.com") || parsed.hostname.endsWith("youtube-nocookie.com")) {
-      const v = parsed.searchParams.get("v");
-      if (v) return v;
-      const match = parsed.pathname.match(/^\/(?:embed|shorts|live|v)\/([\w-]{6,})/);
-      return match ? match[1] : null;
-    }
-  } catch {
-    // URL tidak valid
-  }
-  return null;
+export interface CoursesState {
+  courses: Course[];
+  course: Course | null;
+  courseContent: CourseContent | null;
+  isCourse: boolean;
+  isCourseAdd: boolean;
+  isCourseAdded: boolean;
+  isCourseChange: boolean;
+  isCourseChanged: boolean;
+  isCourseChangeCover: boolean;
+  isCourseChangedCover: boolean;
+  isCourseDelete: boolean;
+  isCourseDeleted: boolean;
+  isCourseDeleteAll: boolean;
+  isCourseDeletedAll: boolean;
+  isCourseStudentJoin: boolean;
+  isCourseStudentJoined: boolean;
+  isCourseStudentLeave: boolean;
+  isCourseStudentLeft: boolean;
+  isCourseStudentRating: boolean;
+  isCourseStudentRated: boolean;
+  isCourseContent: boolean;
+  isCourseContentAdd: boolean;
+  isCourseContentAdded: boolean;
+  isCourseContentChange: boolean;
+  isCourseContentChanged: boolean;
+  isCourseContentDelete: boolean;
+  isCourseContentDeleted: boolean;
+  isCourseContentLearn: boolean;
+  isCourseContentLearned: boolean;
 }
 
-async function run(flag, task) {
-  flag.set(true);
-  try {
-    return await task();
-  } finally {
-    flag.set(false);
-  }
+function createCoursesStore() {
+  const initial: CoursesState = {
+    courses: [],
+    course: null,
+    courseContent: null,
+    isCourse: false,
+    isCourseAdd: false,
+    isCourseAdded: false,
+    isCourseChange: false,
+    isCourseChanged: false,
+    isCourseChangeCover: false,
+    isCourseChangedCover: false,
+    isCourseDelete: false,
+    isCourseDeleted: false,
+    isCourseDeleteAll: false,
+    isCourseDeletedAll: false,
+    isCourseStudentJoin: false,
+    isCourseStudentJoined: false,
+    isCourseStudentLeave: false,
+    isCourseStudentLeft: false,
+    isCourseStudentRating: false,
+    isCourseStudentRated: false,
+    isCourseContent: false,
+    isCourseContentAdd: false,
+    isCourseContentAdded: false,
+    isCourseContentChange: false,
+    isCourseContentChanged: false,
+    isCourseContentDelete: false,
+    isCourseContentDeleted: false,
+    isCourseContentLearn: false,
+    isCourseContentLearned: false,
+  };
+
+  let currentState: CoursesState = { ...initial };
+  const innerStore = writable<CoursesState>(currentState);
+  innerStore.subscribe((val) => {
+    currentState = val;
+  });
+
+  return {
+    subscribe: innerStore.subscribe,
+    get courses() {
+      return currentState.courses;
+    },
+    get course() {
+      return currentState.course;
+    },
+    get courseContent() {
+      return currentState.courseContent;
+    },
+    get isCourse() {
+      return currentState.isCourse;
+    },
+    get isCourseAdd() {
+      return currentState.isCourseAdd;
+    },
+    get isCourseAdded() {
+      return currentState.isCourseAdded;
+    },
+    get isCourseChange() {
+      return currentState.isCourseChange;
+    },
+    get isCourseChanged() {
+      return currentState.isCourseChanged;
+    },
+    get isCourseChangeCover() {
+      return currentState.isCourseChangeCover;
+    },
+    get isCourseChangedCover() {
+      return currentState.isCourseChangedCover;
+    },
+    get isCourseDelete() {
+      return currentState.isCourseDelete;
+    },
+    get isCourseDeleted() {
+      return currentState.isCourseDeleted;
+    },
+    get isCourseDeleteAll() {
+      return currentState.isCourseDeleteAll;
+    },
+    get isCourseDeletedAll() {
+      return currentState.isCourseDeletedAll;
+    },
+    get isCourseStudentJoin() {
+      return currentState.isCourseStudentJoin;
+    },
+    get isCourseStudentJoined() {
+      return currentState.isCourseStudentJoined;
+    },
+    get isCourseStudentLeave() {
+      return currentState.isCourseStudentLeave;
+    },
+    get isCourseStudentLeft() {
+      return currentState.isCourseStudentLeft;
+    },
+    get isCourseStudentRating() {
+      return currentState.isCourseStudentRating;
+    },
+    get isCourseStudentRated() {
+      return currentState.isCourseStudentRated;
+    },
+    get isCourseContent() {
+      return currentState.isCourseContent;
+    },
+    get isCourseContentAdd() {
+      return currentState.isCourseContentAdd;
+    },
+    get isCourseContentAdded() {
+      return currentState.isCourseContentAdded;
+    },
+    get isCourseContentChange() {
+      return currentState.isCourseContentChange;
+    },
+    get isCourseContentChanged() {
+      return currentState.isCourseContentChanged;
+    },
+    get isCourseContentDelete() {
+      return currentState.isCourseContentDelete;
+    },
+    get isCourseContentDeleted() {
+      return currentState.isCourseContentDeleted;
+    },
+    get isCourseContentLearn() {
+      return currentState.isCourseContentLearn;
+    },
+    get isCourseContentLearned() {
+      return currentState.isCourseContentLearned;
+    },
+    get $state() {
+      return currentState;
+    },
+    reset(state: Partial<CoursesState> = initial) {
+      innerStore.set({ ...initial, ...state });
+    },
+    setCourses(courses: Course[]) {
+      innerStore.update((s) => ({ ...s, courses }));
+    },
+    setCourse(course: Course | null) {
+      innerStore.update((s) => ({ ...s, course }));
+    },
+    setCourseContent(courseContent: CourseContent | null) {
+      innerStore.update((s) => ({ ...s, courseContent }));
+    },
+    setIsCourse(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourse: status }));
+    },
+    setIsCourseAdd(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseAdd: status }));
+    },
+    setIsCourseAdded(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseAdded: status }));
+    },
+    setIsCourseChange(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseChange: status }));
+    },
+    setIsCourseChanged(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseChanged: status }));
+    },
+    setIsCourseChangeCover(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseChangeCover: status }));
+    },
+    setIsCourseChangedCover(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseChangedCover: status }));
+    },
+    setIsCourseDelete(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseDelete: status }));
+    },
+    setIsCourseDeleted(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseDeleted: status }));
+    },
+    setIsCourseDeleteAll(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseDeleteAll: status }));
+    },
+    setIsCourseDeletedAll(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseDeletedAll: status }));
+    },
+    setIsCourseStudentJoin(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseStudentJoin: status }));
+    },
+    setIsCourseStudentJoined(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseStudentJoined: status }));
+    },
+    setIsCourseStudentLeave(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseStudentLeave: status }));
+    },
+    setIsCourseStudentLeft(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseStudentLeft: status }));
+    },
+    setIsCourseStudentRating(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseStudentRating: status }));
+    },
+    setIsCourseStudentRated(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseStudentRated: status }));
+    },
+    setIsCourseContent(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContent: status }));
+    },
+    setIsCourseContentAdd(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentAdd: status }));
+    },
+    setIsCourseContentAdded(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentAdded: status }));
+    },
+    setIsCourseContentChange(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentChange: status }));
+    },
+    setIsCourseContentChanged(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentChanged: status }));
+    },
+    setIsCourseContentDelete(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentDelete: status }));
+    },
+    setIsCourseContentDeleted(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentDeleted: status }));
+    },
+    setIsCourseContentLearn(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentLearn: status }));
+    },
+    setIsCourseContentLearned(status: boolean) {
+      innerStore.update((s) => ({ ...s, isCourseContentLearned: status }));
+    },
+
+    async asyncSetCourses(is_me: string | number | boolean = "") {
+      try {
+        const courses = await courseApi.getCourses(is_me);
+        this.setCourses(courses);
+      } catch {
+        this.setCourses([]);
+      }
+    },
+
+    async asyncSetCourse(courseId: string | number) {
+      try {
+        const course = await courseApi.getCourseById(courseId);
+        this.setCourse(course);
+      } catch {
+        this.setCourse(null);
+      } finally {
+        this.setIsCourse(true);
+      }
+    },
+
+    async asyncSetIsCourseAdd(title: string, description: string) {
+      try {
+        await courseApi.postCourse(title, description);
+        showSuccessDialog("Kursus berhasil ditambahkan!");
+        this.setIsCourseAdded(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseAdded(false);
+      } finally {
+        this.setIsCourseAdd(true);
+      }
+    },
+
+    async asyncSetIsCourseChange(
+      courseId: string | number,
+      title: string,
+      description: string
+    ) {
+      try {
+        const message = await courseApi.putCourse(courseId, title, description);
+        showSuccessDialog(message || "Kursus berhasil diubah!");
+        this.setIsCourseChanged(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseChanged(false);
+      } finally {
+        this.setIsCourseChange(true);
+      }
+    },
+
+    async asyncSetIsCourseChangeCover(courseId: string | number, cover: File) {
+      try {
+        const message = await courseApi.postCourseCover(courseId, cover);
+        showSuccessDialog(message || "Cover kursus berhasil diubah!");
+        this.setIsCourseChangedCover(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseChangedCover(false);
+      } finally {
+        this.setIsCourseChangeCover(true);
+      }
+    },
+
+    async asyncSetIsCourseDelete(courseId: string | number) {
+      try {
+        const message = await courseApi.deleteCourse(courseId);
+        showSuccessDialog(message || "Kursus berhasil dihapus!");
+        this.setIsCourseDeleted(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseDeleted(false);
+      } finally {
+        this.setIsCourseDelete(true);
+      }
+    },
+
+    async asyncSetIsCourseDeleteAll() {
+      try {
+        const message = await courseApi.deleteAllCourses();
+        showSuccessDialog(message || "Semua kursus berhasil dihapus!");
+        this.setIsCourseDeletedAll(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseDeletedAll(false);
+      } finally {
+        this.setIsCourseDeleteAll(true);
+      }
+    },
+
+    async asyncSetIsCourseStudentJoin(courseId: string | number) {
+      try {
+        const message = await courseApi.postCourseStudent(courseId);
+        showSuccessDialog(message || "Berhasil bergabung ke kursus!");
+        this.setIsCourseStudentJoined(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseStudentJoined(false);
+      } finally {
+        this.setIsCourseStudentJoin(true);
+      }
+    },
+
+    async asyncSetIsCourseStudentLeave(courseId: string | number) {
+      try {
+        const message = await courseApi.deleteCourseStudent(courseId);
+        showSuccessDialog(message || "Berhasil keluar dari kursus!");
+        this.setIsCourseStudentLeft(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseStudentLeft(false);
+      } finally {
+        this.setIsCourseStudentLeave(true);
+      }
+    },
+
+    async asyncSetIsCourseStudentRating(
+      courseId: string | number,
+      ratings: number,
+      comment: string = ""
+    ) {
+      try {
+        const message = await courseApi.putCourseStudentRating(
+          courseId,
+          ratings,
+          comment
+        );
+        showSuccessDialog(message || "Berhasil memberikan rating!");
+        this.setIsCourseStudentRated(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseStudentRated(false);
+      } finally {
+        this.setIsCourseStudentRating(true);
+      }
+    },
+
+    async asyncSetCourseContent(contentId: string | number) {
+      try {
+        const content = await courseApi.getCourseContentById(contentId);
+        this.setCourseContent(content);
+      } catch {
+        this.setCourseContent(null);
+      } finally {
+        this.setIsCourseContent(true);
+      }
+    },
+
+    async asyncSetIsCourseContentAdd(
+      courseId: string | number,
+      title: string,
+      youtube: string
+    ) {
+      try {
+        await courseApi.postCourseContent(courseId, title, youtube);
+        showSuccessDialog("Konten kursus berhasil ditambahkan!");
+        this.setIsCourseContentAdded(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseContentAdded(false);
+      } finally {
+        this.setIsCourseContentAdd(true);
+      }
+    },
+
+    async asyncSetIsCourseContentChange(
+      contentId: string | number,
+      title: string,
+      youtube: string
+    ) {
+      try {
+        const message = await courseApi.putCourseContent(
+          contentId,
+          title,
+          youtube
+        );
+        showSuccessDialog(message || "Konten kursus berhasil diubah!");
+        this.setIsCourseContentChanged(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseContentChanged(false);
+      } finally {
+        this.setIsCourseContentChange(true);
+      }
+    },
+
+    async asyncSetIsCourseContentDelete(contentId: string | number) {
+      try {
+        const message = await courseApi.deleteCourseContent(contentId);
+        showSuccessDialog(message || "Konten kursus berhasil dihapus!");
+        this.setIsCourseContentDeleted(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseContentDeleted(false);
+      } finally {
+        this.setIsCourseContentDelete(true);
+      }
+    },
+
+    async asyncSetIsCourseContentLearn(
+      contentId: string | number,
+      status: number | boolean
+    ) {
+      try {
+        const message = await courseApi.postCourseContentLearn(
+          contentId,
+          status
+        );
+        showSuccessDialog(message || "Status pembelajaran berhasil diperbarui!");
+        this.setIsCourseContentLearned(true);
+      } catch (error: any) {
+        showErrorDialog(error.message);
+        this.setIsCourseContentLearned(false);
+      } finally {
+        this.setIsCourseContentLearn(true);
+      }
+    },
+  };
 }
 
-async function refreshList() {
-  const res = await api.getCourses();
-  if (res.success) courses.set(res.data?.courses ?? []);
-}
-
-async function refreshDetail(id) {
-  const res = await api.getCourse(id);
-  if (res.success) course.set(res.data?.course ?? null);
-}
-
-export async function fetchCourses() {
-  isLoading.set(true);
-  const res = await api.getCourses();
-  if (res.success) courses.set(res.data?.courses ?? []);
-  isLoading.set(false);
-  return res;
-}
-
-export async function fetchCourse(id) {
-  isLoading.set(true);
-  course.set(null);
-  const res = await api.getCourse(id);
-  course.set(res.success ? (res.data?.course ?? null) : null);
-  isLoading.set(false);
-  return res;
-}
-
-export async function fetchContent(contentId) {
-  isLoading.set(true);
-  content.set(null);
-  const res = await api.getContent(contentId);
-  content.set(res.success ? (res.data?.course_content ?? null) : null);
-  isLoading.set(false);
-  return res;
-}
-
-export const addCourse = (payload, cover) =>
-  run(isAdding, async () => {
-    const res = await api.postCourse(payload);
-    if (res.success) {
-      // CEK DOCS: nama field id pada respons POST /courses.
-      const id = res.data?.course_id ?? res.data?.id;
-      if (cover && id) await api.postCourseCover(id, cover);
-      await refreshList();
-    }
-    return res;
-  });
-
-export const changeCourse = (id, payload) =>
-  run(isChanging, async () => {
-    const res = await api.putCourse(id, payload);
-    if (res.success) await refreshDetail(id);
-    return res;
-  });
-
-export const changeCourseCover = (id, file) =>
-  run(isChangingCover, async () => {
-    const res = await api.postCourseCover(id, file);
-    if (res.success) await refreshDetail(id);
-    return res;
-  });
-
-export const removeCourse = (id) =>
-  run(isDeleting, async () => {
-    const res = await api.deleteCourse(id);
-    if (res.success) courses.update((list) => list.filter((item) => item.id !== id));
-    return res;
-  });
-
-export const removeAllCourses = () =>
-  run(isDeletingAll, async () => {
-    const res = await api.deleteAllCourses();
-    if (res.success) await refreshList();
-    return res;
-  });
-
-export const joinCourse = (id) =>
-  run(isJoining, async () => {
-    const res = await api.postJoin(id);
-    if (res.success) await refreshDetail(id);
-    return res;
-  });
-
-export const leaveCourse = (id) =>
-  run(isJoining, async () => {
-    const res = await api.deleteLeave(id);
-    if (res.success) await refreshDetail(id);
-    return res;
-  });
-
-export const rateCourse = (id, rating) =>
-  run(isRating, async () => {
-    const res = await api.postRating(id, rating);
-    if (res.success) await refreshDetail(id);
-    return res;
-  });
-
-export const addContent = (courseId, payload) =>
-  run(isContentMutating, async () => {
-    const res = await api.postContent(courseId, payload);
-    if (res.success) await refreshDetail(courseId);
-    return res;
-  });
-
-export const changeContent = (courseId, contentId, payload) =>
-  run(isContentMutating, async () => {
-    const res = await api.putContent(contentId, payload);
-    if (res.success) await refreshDetail(courseId);
-    return res;
-  });
-
-export const removeContent = (courseId, contentId) =>
-  run(isContentMutating, async () => {
-    const res = await api.deleteContent(contentId);
-    if (res.success) await refreshDetail(courseId);
-    return res;
-  });
-
-export const setLearned = (contentId, status) =>
-  run(isContentMutating, async () => {
-    const res = await api.putLearn(contentId, status);
-    if (res.success) {
-      const fresh = await api.getContent(contentId);
-      if (fresh.success) content.set(fresh.data?.course_content ?? null);
-    }
-    return res;
-  });
+export const coursesStore = createCoursesStore();
+export const useCoursesStore = () => coursesStore;
+export default coursesStore;

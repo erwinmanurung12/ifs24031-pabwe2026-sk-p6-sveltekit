@@ -1,36 +1,86 @@
-import { writable, derived } from "svelte/store";
-import { getAccessToken, putAccessToken } from "../../../helpers/apiHelper";
-import { getMe } from "../../users/api/userApi";
+import { writable } from "svelte/store";
+import authApi from "../api/authApi";
+import apiHelper from "../../../helpers/apiHelper";
+import { showErrorDialog, showSuccessDialog } from "../../../helpers/toolsHelper";
 
-export const token = writable<any>(null);
-export const sessionReady = writable(false);
-export const profile = writable<any>(null);
-export const isLoggedIn = derived(token, ($token) => Boolean($token));
-
-/** Baca token dari localStorage. Dipanggil sekali di sisi klien. */
-export function initSession() {
-  token.set(getAccessToken());
-  sessionReady.set(true);
+export interface AuthState {
+  isAuthLogin: boolean;
+  isAuthRegister: boolean;
+  isAuthLogout: boolean;
 }
 
-export function startSession(newToken, user) {
-  putAccessToken(newToken);
-  profile.set(user);
-  token.set(newToken);
+function createAuthStore() {
+  const initial: AuthState = {
+    isAuthLogin: false,
+    isAuthRegister: false,
+    isAuthLogout: false,
+  };
+
+  let currentState: AuthState = { ...initial };
+  const innerStore = writable<AuthState>(currentState);
+  innerStore.subscribe((val) => {
+    currentState = val;
+  });
+
+  return {
+    subscribe: innerStore.subscribe,
+    get isAuthLogin() {
+      return currentState.isAuthLogin;
+    },
+    get isAuthRegister() {
+      return currentState.isAuthRegister;
+    },
+    get isAuthLogout() {
+      return currentState.isAuthLogout;
+    },
+    get $state() {
+      return currentState;
+    },
+    reset(state: Partial<AuthState> = initial) {
+      innerStore.set({ ...initial, ...state });
+    },
+    setIsAuthLogin(value: boolean) {
+      innerStore.update((s) => ({ ...s, isAuthLogin: value }));
+    },
+    setIsAuthRegister(value: boolean) {
+      innerStore.update((s) => ({ ...s, isAuthRegister: value }));
+    },
+    setIsAuthLogout(value: boolean) {
+      innerStore.update((s) => ({ ...s, isAuthLogout: value }));
+    },
+    async asyncSetIsAuthLogin(email: string, password: string) {
+      try {
+        const data = await authApi.postLogin(email, password);
+        apiHelper.putAccessToken(data.token);
+        this.setIsAuthLogin(true);
+      } catch (error: any) {
+        this.setIsAuthLogin(false);
+        showErrorDialog(error.message);
+      }
+    },
+    async asyncSetIsAuthRegister(name: string, email: string, password: string) {
+      try {
+        const message = await authApi.postRegister(name, email, password);
+        this.setIsAuthRegister(true);
+        showSuccessDialog(message);
+      } catch (error: any) {
+        this.setIsAuthRegister(false);
+        showErrorDialog(error.message);
+      }
+    },
+    async asyncSetIsAuthLogout() {
+      try {
+        await authApi.postLogout();
+      } catch {
+        // Still proceed with clearing token locally even if server error
+      } finally {
+        apiHelper.putAccessToken("");
+        this.setIsAuthLogout(true);
+      }
+    },
+  };
 }
 
-export function logout() {
-  putAccessToken(null);
-  profile.set(null);
-  token.set(null);
-}
-
-export async function loadProfile() {
-  const res = await getMe();
-  if (res.success && res.data?.user) {
-    profile.set(res.data.user);
-    return true;
-  }
-  logout();
-  return false;
-}
+export const authStore = createAuthStore();
+export const useAuthStore = () => authStore;
+export default authStore;

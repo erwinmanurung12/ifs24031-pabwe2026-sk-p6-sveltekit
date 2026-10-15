@@ -1,14 +1,42 @@
 <script lang="ts">
-  import { link } from "../../../helpers/navHelper";
+  import { goto } from "$app/navigation";
+  import { CircleQuestionMark, ArrowLeft, House } from "lucide-svelte";
 </script>
 
-<svelte:head>
-  <title>Halaman tidak ditemukan - Delcom Courses</title>
-</svelte:head>
+<div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+  <div class="max-w-md w-full text-center space-y-6 bg-white p-8 sm:p-10 rounded-3xl border border-slate-200/80 shadow-xl shadow-slate-100">
+    <div class="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+      <CircleQuestionMark size={36} strokeWidth={2.5} />
+    </div>
 
-<section class="py-16 text-center">
-  <p aria-hidden="true" class="text-6xl font-extrabold text-blue-800">404</p>
-  <h1 class="mt-4 text-2xl font-bold text-slate-900">Halaman tidak ditemukan</h1>
-  <p class="mt-2 text-slate-700">Alamat yang kamu buka tidak tersedia atau sudah dipindahkan.</p>
-  <a href="/" use:link class="btn btn-primary mt-6">Kembali ke beranda</a>
-</section>
+    <div class="space-y-2">
+      <h1 class="text-4xl font-black text-slate-900 tracking-tight">404</h1>
+      <h2 class="text-xl font-bold text-slate-800">Halaman Tidak Ditemukan</h2>
+      <p class="text-sm text-slate-500 leading-relaxed">
+        Maaf, halaman yang Anda cari tidak dapat ditemukan atau telah dipindahkan.
+      </p>
+    </div>
+
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+      <button
+        type="button"
+        data-testid="back-button"
+        on:click={() => window.history.back()}
+        class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors"
+      >
+        <ArrowLeft size={16} />
+        Kembali
+      </button>
+
+      <button
+        type="button"
+        data-testid="home-button"
+        on:click={() => goto("/")}
+        class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-sm font-semibold text-white shadow-md shadow-indigo-600/25 transition-all"
+      >
+        <House size={16} />
+        Beranda
+      </button>
+    </div>
+  </div>
+</div>

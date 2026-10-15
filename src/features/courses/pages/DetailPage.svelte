@@ -1,197 +1,466 @@
 <script lang="ts">
-  import { ArrowLeft, Pencil, Image as ImageIcon, Trash2, Plus, Video, CircleCheck } from "lucide-svelte";
-  import ChangeModal from "../modals/ChangeModal.svelte";
+  import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
+  import { coursesStore } from "../states/coursesStore";
+  import { usersStore } from "../../users/states/usersStore";
+  import { showConfirmDialog } from "../../../helpers/toolsHelper";
+  import MarkdownViewer from "../components/MarkdownViewer.svelte";
   import ChangeCoverModal from "../modals/ChangeCoverModal.svelte";
+  import ChangeModal from "../modals/ChangeModal.svelte";
   import ContentModal from "../modals/ContentModal.svelte";
-  import { link, go } from "../../../helpers/navHelper";
-  import { showConfirmDialog, showErrorDialog, showSuccessDialog } from "../../../helpers/toolsHelper";
-  import { profile } from "../../auth/states/authStore";
+  import RatingModal from "../modals/RatingModal.svelte";
   import {
-    course,
-    isLoading,
-    isDeleting,
-    isJoining,
-    isRating,
-    isContentMutating,
-    fetchCourse,
-    removeCourse,
-    joinCourse,
-    leaveCourse,
-    rateCourse,
-    removeContent,
-    isOwnerOf,
-    isStudentOf,
-    isLearned,
-  } from "../states/coursesStore";
+    ArrowLeft,
+    GraduationCap,
+    Users,
+    Star,
+    BookOpen,
+    Camera,
+    Pencil,
+    Trash2,
+    Plus,
+    Video,
+    CheckCircle2,
+    Circle,
+    UserCheck,
+    LogOut,
+    Eye,
+    LoaderCircle,
+  } from "lucide-svelte";
+  import type { CourseContent } from "../api/courseApi";
 
-  let { courseId } = $props();
-  let showChange = $state(false);
-  let showCover = $state(false);
-  let showContent = $state(false);
-  let editingContent = $state(null);
-  let rating = $state(0);
+  export let courseId: string | number | null = null;
 
-  const owner = $derived(isOwnerOf($course, $profile?.id));
-  const student = $derived(isStudentOf($course, $profile?.id));
+  let showChangeCoverModal: boolean = false;
+  let showChangeModal: boolean = false;
+  let showContentModal: boolean = false;
+  let showRatingModal: boolean = false;
+  let selectedContent: CourseContent | null = null;
 
-  $effect(() => {
-    fetchCourse(courseId);
+  $: profile = $usersStore.profile;
+  $: course = $coursesStore.course;
+
+  onMount(() => {
+    if (courseId) {
+      coursesStore.asyncSetCourse(courseId);
+    }
   });
 
-  function openAddContent() {
-    editingContent = null;
-    showContent = true;
+  $: if ($coursesStore.isCourseDeleted) {
+    coursesStore.setIsCourseDeleted(false);
+    goto("/");
   }
 
-  function openEditContent(item) {
-    editingContent = item;
-    showContent = true;
+  $: if ($coursesStore.isCourseStudentJoin) {
+    coursesStore.setIsCourseStudentJoin(false);
+    if ($coursesStore.isCourseStudentJoined && courseId) {
+      coursesStore.setIsCourseStudentJoined(false);
+      coursesStore.asyncSetCourse(courseId);
+    }
   }
 
-  async function report(res) {
-    if (res.success) await showSuccessDialog(res.message);
-    else await showErrorDialog(res.message);
+  $: if ($coursesStore.isCourseStudentLeave) {
+    coursesStore.setIsCourseStudentLeave(false);
+    if ($coursesStore.isCourseStudentLeft && courseId) {
+      coursesStore.setIsCourseStudentLeft(false);
+      coursesStore.asyncSetCourse(courseId);
+    }
   }
 
-  async function handleDelete() {
-    const ok = await showConfirmDialog(`Hapus kursus "${$course.title}"? Tindakan ini tidak dapat dibatalkan.`, {
-      title: "Hapus Kursus",
-      confirmText: "Hapus",
-    });
-    if (!ok) return;
-    const res = await removeCourse($course.id);
-    if (!res.success) return showErrorDialog(res.message);
-    await go("/");
-    await showSuccessDialog(res.message);
+  $: if ($coursesStore.isCourseContentDelete) {
+    coursesStore.setIsCourseContentDelete(false);
+    if ($coursesStore.isCourseContentDeleted && courseId) {
+      coursesStore.setIsCourseContentDeleted(false);
+      coursesStore.asyncSetCourse(courseId);
+    }
   }
 
-  async function handleLeave() {
-    const ok = await showConfirmDialog("Kamu yakin ingin keluar dari kursus ini?", { title: "Keluar Kursus", confirmText: "Keluar" });
-    if (ok) await report(await leaveCourse($course.id));
+  $: isOwner = Boolean(profile && course && course.user_id === profile.id);
+  $: isStudent = Boolean(
+    profile &&
+      course &&
+      course.students &&
+      course.students.includes(profile.id)
+  );
+
+  async function handleDeleteCourse() {
+    const result = await showConfirmDialog("Apakah Anda yakin ingin menghapus kursus ini?");
+    if (result.isConfirmed) {
+      coursesStore.asyncSetIsCourseDelete(course.id);
+    }
   }
 
-  async function handleRate(event) {
-    event.preventDefault();
-    if (rating < 1) return showErrorDialog("Pilih rating 1 sampai 5 terlebih dahulu.");
-    await report(await rateCourse($course.id, rating));
+  async function handleJoinCourse() {
+    coursesStore.asyncSetIsCourseStudentJoin(course.id);
   }
 
-  async function handleDeleteContent(item) {
-    const ok = await showConfirmDialog(`Hapus konten "${item.title}"?`, { title: "Hapus Konten", confirmText: "Hapus" });
-    if (ok) await report(await removeContent($course.id, item.id));
+  async function handleLeaveCourse() {
+    const result = await showConfirmDialog("Apakah Anda yakin ingin keluar dari kursus ini?");
+    if (result.isConfirmed) {
+      coursesStore.asyncSetIsCourseStudentLeave(course.id);
+    }
+  }
+
+  function handleAddContent() {
+    selectedContent = null;
+    showContentModal = true;
+  }
+
+  function handleEditContent(content: CourseContent) {
+    selectedContent = content;
+    showContentModal = true;
+  }
+
+  async function handleDeleteContent(contentId: string | number) {
+    const result = await showConfirmDialog("Apakah Anda yakin ingin menghapus konten materi ini?");
+    if (result.isConfirmed) {
+      coursesStore.asyncSetIsCourseContentDelete(contentId);
+    }
   }
 </script>
 
-<svelte:head>
-  <title>{$course ? `${$course.title} - Delcom Courses` : "Detail Kursus - Delcom Courses"}</title>
-</svelte:head>
+<div class="space-y-6 animate-in fade-in duration-300">
+  <!-- Back Button Navigation -->
+  <div>
+    <button
+      type="button"
+      data-testid="back-button"
+      on:click={() => goto("/")}
+      class="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+    >
+      <ArrowLeft size={16} />
+      <span>Kembali ke Semua Kursus</span>
+    </button>
+  </div>
 
-<a href="/" use:link class="inline-flex min-h-11 items-center gap-2 font-semibold text-blue-800 underline">
-  <ArrowLeft size={18} aria-hidden="true" />
-  <span>Semua Kursus</span>
-</a>
-
-{#if $isLoading}
-  <p role="status" class="mt-4 text-slate-700">Memuat detail kursus...</p>
-{:else if !$course}
-  <section class="mt-6 rounded-xl border border-dashed border-slate-400 bg-white p-8 text-center">
-    <h1 class="text-2xl font-bold text-slate-900">Kursus tidak ditemukan</h1>
-    <p class="mt-2 text-slate-700">Kursus ini mungkin sudah dihapus atau tidak tersedia.</p>
-  </section>
-{:else}
-  <article class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-    {#if $course.cover}
-      <img src={$course.cover} alt="" width="1200" height="400" class="aspect-[3/1] w-full object-cover" />
-    {/if}
-    <div class="space-y-4 p-6">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-3xl font-extrabold text-slate-900">{$course.title}</h1>
-          {#if Array.isArray($course.students)}
-            <p class="mt-2 text-sm font-medium text-slate-700">{$course.students.length} peserta</p>
-          {/if}
-        </div>
-
-        <!-- Antarmuka pemilik didahulukan bila pengguna sekaligus pemilik dan peserta. -->
-        {#if owner}
-          <div class="flex flex-wrap gap-2">
-            <button type="button" class="btn btn-secondary" onclick={() => (showChange = true)}><Pencil size={18} aria-hidden="true" /><span>Ubah data</span></button>
-            <button type="button" class="btn btn-secondary" onclick={() => (showCover = true)}><ImageIcon size={18} aria-hidden="true" /><span>Ubah sampul</span></button>
-            <button type="button" class="btn btn-danger" onclick={handleDelete} disabled={$isDeleting}><Trash2 size={18} aria-hidden="true" /><span>Hapus</span></button>
-          </div>
-        {:else if student}
-          <button type="button" class="btn btn-secondary" onclick={handleLeave} disabled={$isJoining}>Keluar dari kursus</button>
+  {#if !course}
+    <div class="flex flex-col items-center justify-center py-24 text-slate-400">
+      <LoaderCircle size={36} class="animate-spin text-indigo-600 mb-3" />
+      <p class="text-sm font-medium">Memuat detail kursus...</p>
+    </div>
+  {:else}
+    <!-- Course Banner & Header Card -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <!-- Cover Banner -->
+      <div class="h-64 sm:h-80 bg-gradient-to-tr from-indigo-800 via-indigo-950 to-slate-900 relative">
+        {#if course.cover}
+          <img
+            src={course.cover}
+            alt={course.title}
+            class="w-full h-full object-cover"
+          />
         {:else}
-          <button type="button" class="btn btn-primary" onclick={async () => report(await joinCourse($course.id))} disabled={$isJoining}>
-            {$isJoining ? "Memproses..." : "Gabung kursus"}
+          <div class="w-full h-full flex flex-col items-center justify-center text-white/30">
+            <GraduationCap size={72} strokeWidth={1.5} />
+          </div>
+        {/if}
+
+        {#if isOwner}
+          <button
+            type="button"
+            data-testid="change-cover-btn"
+            on:click={() => (showChangeCoverModal = true)}
+            class="absolute bottom-4 right-4 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-900 text-white text-xs font-semibold backdrop-blur-md transition-all shadow-lg"
+          >
+            <Camera size={15} />
+            <span>Ubah Cover</span>
           </button>
         {/if}
       </div>
 
-      {#if $course.description}
-        <p class="whitespace-pre-line text-slate-800">{$course.description}</p>
-      {/if}
-    </div>
-  </article>
+      <!-- Course Header Details -->
+      <div class="p-6 sm:p-8 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-start justify-between gap-6">
+          <div class="space-y-3 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-200/60">
+                <Star size={13} class="fill-amber-500 text-amber-500" />
+                <span>Rating: {course.avg_ratings ? Number(course.avg_ratings).toFixed(1) : "0.0"}</span>
+              </span>
 
-  {#if student && !owner}
-    <section class="mt-6 rounded-2xl border border-slate-200 bg-white p-6" aria-labelledby="rating-heading">
-      <h2 id="rating-heading" class="text-xl font-bold text-slate-900">Beri rating</h2>
-      <form class="mt-3 space-y-3" onsubmit={handleRate}>
-        <fieldset>
-          <legend class="text-sm font-semibold text-slate-800">Seberapa puas kamu dengan kursus ini? (1 sampai 5)</legend>
-          <div class="mt-2 flex flex-wrap gap-2">
-            {#each [1, 2, 3, 4, 5] as value (value)}
-              <label class="cursor-pointer">
-                <input type="radio" name="rating" {value} checked={rating === value} onchange={() => (rating = value)} class="peer sr-only" />
-                <span class="grid min-h-11 min-w-11 place-items-center rounded-lg border border-slate-500 bg-white px-3 font-bold text-slate-900 peer-checked:border-blue-700 peer-checked:bg-blue-700 peer-checked:text-white peer-focus-visible:ring-4 peer-focus-visible:ring-blue-300">
-                  {value}<span class="sr-only"> dari 5</span>
+              {#if isStudent}
+                <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200/60">
+                  <UserCheck size={13} />
+                  <span>Terdaftar sebagai Siswa</span>
                 </span>
-              </label>
-            {/each}
-          </div>
-        </fieldset>
-        <button type="submit" class="btn btn-primary" disabled={$isRating}>{$isRating ? "Mengirim..." : "Kirim rating"}</button>
-      </form>
-    </section>
-  {/if}
+              {/if}
 
-  <section class="mt-6" aria-labelledby="contents-heading">
-    <div class="flex flex-wrap items-center justify-between gap-3">
-      <h2 id="contents-heading" class="text-xl font-bold text-slate-900">Daftar Konten</h2>
-      {#if owner}
-        <button type="button" class="btn btn-primary" onclick={openAddContent}><Plus size={18} aria-hidden="true" /><span>Tambah konten</span></button>
-      {/if}
-    </div>
-
-    {#if !$course.contents || $course.contents.length === 0}
-      <p class="mt-4 rounded-xl border border-dashed border-slate-400 bg-white p-6 text-slate-700">Belum ada konten pada kursus ini.</p>
-    {:else}
-      <ol class="mt-4 space-y-3">
-        {#each $course.contents as item (item.id)}
-          <li class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
-            <div class="flex min-w-0 items-center gap-3">
-              <Video size={22} aria-hidden="true" class="shrink-0 text-blue-800" />
-              <a href={`/courses/${$course.id}/contents/${item.id}`} use:link class="font-semibold text-blue-800 underline">{item.title}</a>
-              {#if isLearned(item)}
-                <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-900">
-                  <CircleCheck size={14} aria-hidden="true" />Selesai
+              {#if isOwner}
+                <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-200/60">
+                  <span>Pemilik Kursus</span>
                 </span>
               {/if}
             </div>
-            {#if owner}
-              <div class="flex gap-2">
-                <button type="button" class="btn btn-secondary" onclick={() => openEditContent(item)} aria-label={`Ubah konten ${item.title}`}><Pencil size={18} aria-hidden="true" /><span>Ubah</span></button>
-                <button type="button" class="btn btn-secondary" onclick={() => handleDeleteContent(item)} disabled={$isContentMutating} aria-label={`Hapus konten ${item.title}`}><Trash2 size={18} aria-hidden="true" /><span>Hapus</span></button>
-              </div>
-            {/if}
-          </li>
-        {/each}
-      </ol>
-    {/if}
-  </section>
 
-  {#if showChange}<ChangeModal course={$course} onclose={() => (showChange = false)} />{/if}
-  {#if showCover}<ChangeCoverModal course={$course} onclose={() => (showCover = false)} />{/if}
-  {#if showContent}<ContentModal courseId={$course.id} content={editingContent} onclose={() => (showContent = false)} />{/if}
-{/if}
+            <h1 class="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+              {course.title}
+            </h1>
+
+            <div class="flex items-center gap-6 text-xs text-slate-500 flex-wrap">
+              <div class="flex items-center gap-2">
+                <div class="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-500 to-cyan-500 text-white flex items-center justify-center font-bold text-[10px]">
+                  {course.author?.name ? course.author.name.charAt(0).toUpperCase() : "A"}
+                </div>
+                <span class="font-semibold text-slate-700">{course.author?.name || "Pengajar"}</span>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <Users size={15} class="text-slate-400" />
+                <span>{course.students ? course.students.length : 0} Siswa Terdaftar</span>
+              </div>
+
+              <div class="flex items-center gap-1.5">
+                <BookOpen size={15} class="text-slate-400" />
+                <span>{course.contents ? course.contents.length : 0} Modul Video</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Buttons (Owner vs Student) -->
+          <div class="flex items-center gap-3 shrink-0 flex-wrap">
+            {#if isOwner}
+              <button
+                type="button"
+                data-testid="edit-course-btn"
+                on:click={() => (showChangeModal = true)}
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                <Pencil size={16} />
+                <span>Ubah Kursus</span>
+              </button>
+              <button
+                type="button"
+                data-testid="delete-course-btn"
+                on:click={handleDeleteCourse}
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+              >
+                <Trash2 size={16} />
+                <span>Hapus Kursus</span>
+              </button>
+            {:else if isStudent}
+              <button
+                type="button"
+                data-testid="rate-course-btn"
+                on:click={() => (showRatingModal = true)}
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
+              >
+                <Star size={16} class="fill-amber-500" />
+                <span>Beri Rating</span>
+              </button>
+              <button
+                type="button"
+                data-testid="leave-course-btn"
+                on:click={handleLeaveCourse}
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
+              >
+                <LogOut size={16} />
+                <span>Keluar Kursus</span>
+              </button>
+            {:else}
+              <button
+                type="button"
+                data-testid="join-course-btn"
+                on:click={handleJoinCourse}
+                class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/25 transition-all"
+              >
+                <Plus size={18} strokeWidth={2.5} />
+                <span>Gabung Kursus Ini</span>
+              </button>
+            {/if}
+          </div>
+        </div>
+
+        {#if isStudent && course.my_percentage_finished !== undefined}
+          <!-- Progress Bar -->
+          <div class="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-100/60 space-y-2">
+            <div class="flex items-center justify-between text-xs font-bold text-indigo-900">
+              <span>Progres Belajar Anda</span>
+              <span>{course.my_percentage_finished}% Selesai</span>
+            </div>
+            <div class="w-full h-2.5 rounded-full bg-indigo-100 overflow-hidden">
+              <div
+                class="h-full bg-indigo-600 rounded-full transition-all duration-500"
+                style={`width: ${course.my_percentage_finished}%`}
+              ></div>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Course Description (Markdown) -->
+        <div class="pt-6 border-t border-slate-100 space-y-3">
+          <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">
+            Deskripsi Silabus
+          </h3>
+          <div class="prose prose-slate max-w-none">
+            <MarkdownViewer content={course.description} />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Course Contents Section -->
+    <div class="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 sm:p-8 space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">
+            Materi Pembelajaran (<span>{course.contents ? course.contents.length : 0}</span>)
+          </h2>
+          <p class="text-xs text-slate-500 mt-0.5">
+            Daftar video materi dan modul belajar yang tersedia
+          </p>
+        </div>
+
+        {#if isOwner}
+          <button
+            type="button"
+            data-testid="add-content-btn"
+            on:click={handleAddContent}
+            class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-semibold text-xs text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/25 transition-all"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+            <span>Tambah Video Materi</span>
+          </button>
+        {/if}
+      </div>
+
+      {#if !course.contents || course.contents.length === 0}
+        <div class="p-8 rounded-2xl border border-dashed border-slate-200 text-center">
+          <Video size={32} class="mx-auto text-slate-300 mb-2" />
+          <p class="text-sm font-semibold text-slate-600">Belum ada video materi di kursus ini.</p>
+        </div>
+      {:else}
+        <div class="divide-y divide-slate-100">
+          {#each course.contents as item, index (item.id)}
+            <div
+              data-testid={`content-item-${item.id}`}
+              class="py-4 flex items-center justify-between gap-4 hover:bg-slate-50/60 px-3 rounded-xl transition-colors"
+            >
+              <div class="flex items-center gap-3.5 min-w-0">
+                <span class="w-8 h-8 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0">
+                  {index + 1}
+                </span>
+
+                <div class="min-w-0">
+                  <h4 class="text-sm font-bold text-slate-800 truncate">
+                    {item.title}
+                  </h4>
+                  <p class="text-xs text-slate-400 truncate">
+                    {item.youtube}
+                  </p>
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                {#if isStudent}
+                  {#if item.my_status_finished}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-600 text-xs font-semibold">
+                      <CheckCircle2 size={13} />
+                      <span class="hidden sm:inline">Selesai</span>
+                    </span>
+                  {:else}
+                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-500 text-xs font-medium">
+                      <Circle size={13} />
+                      <span class="hidden sm:inline">Belum</span>
+                    </span>
+                  {/if}
+                {/if}
+
+                <button
+                  type="button"
+                  data-testid={`view-content-btn-${item.id}`}
+                  on:click={() => goto(`/courses/${course.id}/contents/${item.id}`)}
+                  class="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+                >
+                  <Eye size={13} />
+                  <span>Pelajari</span>
+                </button>
+
+                {#if isOwner}
+                  <button
+                    type="button"
+                    data-testid={`edit-content-btn-${item.id}`}
+                    on:click={() => handleEditContent(item)}
+                    class="p-1.5 rounded-lg text-amber-600 hover:bg-amber-50 transition-colors"
+                    title="Ubah Konten"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`delete-content-btn-${item.id}`}
+                    on:click={() => handleDeleteContent(item.id)}
+                    class="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                    title="Hapus Konten"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Course Ratings / Reviews Section -->
+    {#if course.ratings && course.ratings.length > 0}
+      <div class="bg-white rounded-3xl border border-slate-200/80 shadow-xs p-6 sm:p-8 space-y-4">
+        <h2 class="text-lg font-bold text-slate-900">
+          Ulasan & Rating Siswa (<span>{course.ratings.length}</span>)
+        </h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {#each course.ratings as r, i (i)}
+            <div class="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-800">{r.name}</span>
+                <div class="flex items-center text-amber-400">
+                  {#each Array(r.ratings) as _}
+                    <Star size={12} class="fill-amber-400" />
+                  {/each}
+                </div>
+              </div>
+              {#if r.comment}
+                <p class="text-xs text-slate-600">{r.comment}</p>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
+  {/if}
+</div>
+
+<ChangeCoverModal
+  show={showChangeCoverModal}
+  {course}
+  onClose={() => (showChangeCoverModal = false)}
+  on:close={() => (showChangeCoverModal = false)}
+/>
+
+<ChangeModal
+  show={showChangeModal}
+  courseId={course?.id || null}
+  onClose={() => (showChangeModal = false)}
+  on:close={() => (showChangeModal = false)}
+/>
+
+<ContentModal
+  show={showContentModal}
+  courseId={course?.id || null}
+  content={selectedContent}
+  onClose={() => {
+    showContentModal = false;
+    selectedContent = null;
+  }}
+  on:close={() => {
+    showContentModal = false;
+    selectedContent = null;
+  }}
+/>
+
+<RatingModal
+  show={showRatingModal}
+  courseId={course?.id || null}
+  onClose={() => (showRatingModal = false)}
+  on:close={() => (showRatingModal = false)}
+/>
