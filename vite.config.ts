@@ -10,6 +10,18 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const port = Number(process.env.APP_PORT || env.APP_PORT) || 3005;
 
+  // URL API Delcom. Saat build produksi, nilai yang menunjuk ke localhost (mis. salin dari
+  // .env.example) diabaikan, dan http:// dinaikkan ke https:// agar tidak diblokir browser
+  // (mixed content) -> penyebab "Failed to fetch" saat login di situs yang sudah dideploy.
+  const DEFAULT_BASEURL = "https://open-api.delcom.org/api/v1";
+  const configuredBaseUrl = (process.env.VITE_DELCOM_BASEURL || env.VITE_DELCOM_BASEURL || "").trim();
+  const isLocalUrl = /^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(configuredBaseUrl);
+  let baseUrl = configuredBaseUrl || DEFAULT_BASEURL;
+  if (mode === "production") {
+    baseUrl = isLocalUrl ? DEFAULT_BASEURL : baseUrl.replace(/^http:\/\//i, "https://");
+  }
+  baseUrl = baseUrl.replace(/\/+$/, "");
+
   // Vercel mengisi variabel VERCEL saat build, Jenkins tidak.
   const isVercel = Boolean(process.env.VERCEL);
 
@@ -39,9 +51,7 @@ export default defineConfig(({ mode }) => {
       chunkSizeWarningLimit: 1500,
     },
     define: {
-      DELCOM_BASEURL: JSON.stringify(
-        env.VITE_DELCOM_BASEURL || "https://open-api.delcom.org/api/v1"
-      ),
+      DELCOM_BASEURL: JSON.stringify(baseUrl),
     },
     test: {
       globals: true,
