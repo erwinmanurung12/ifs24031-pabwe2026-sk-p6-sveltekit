@@ -1,0 +1,70 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  body {
+    font-family: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+
+  button,
+  a,
+  [role="button"],
+  select,
+  label[for],
+  label[data-testid],
+  summary {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 3px solid #1d4ed8;
+    outline-offset: 2px;
+  }
+}
+
+/* Tombol. Warna dipilih agar kontras teks >= 4.5:1 (lolos Axe & Lighthouse). */
+@layer components {
+  .btn {
+    display: inline-flex;
+    min-height: 2.75rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border-radius: 0.5rem;
+    border: 1px solid transparent;
+    padding: 0 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    text-decoration: none;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+  .btn-primary {
+    background: #1d4ed8;
+    color: #ffffff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #1e40af;
+  }
+  .btn-secondary {
+    background: #ffffff;
+    border-color: #64748b;
+    color: #1e293b;
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: #f1f5f9;
+  }
+  .btn-danger {
+    background: #b91c1c;
+    color: #ffffff;
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: #991b1b;
+  }
+}
