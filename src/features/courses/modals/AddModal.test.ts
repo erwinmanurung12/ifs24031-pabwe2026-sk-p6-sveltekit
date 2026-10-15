@@ -1,96 +1,47 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, fireEvent } from "@testing-library/svelte";
+import { screen, waitFor } from "@testing-library/svelte";
+import Swal from "sweetalert2";
+import { describe, expect, it, vi } from "vitest";
+import { fail, ok, renderWithProviders, submitForm, typeInto } from "../../../test-utils";
+import { postCourse } from "../api/courseApi";
 import AddModal from "./AddModal.svelte";
-import coursesStore from "../states/coursesStore";
-import * as toolsHelper from "../../../helpers/toolsHelper";
+
+vi.mock("../api/courseApi");
+
+async function fill(container: HTMLElement) {
+  await typeInto(screen.getByLabelText("Judul"), "Kursus Baru");
+  await typeInto(screen.getByLabelText("Deskripsi"), "Isi kursus");
+  await submitForm(container);
+}
 
 describe("AddModal", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    coursesStore.reset();
-  });
-
-  it("should not render modal when show is false", () => {
-    const { queryByTestId } = render(AddModal, { props: { show: false } });
-    expect(queryByTestId("add-course-modal")).toBeNull();
-  });
-
-  it("should render modal when show is true and lock body scroll", () => {
-    const { getByTestId } = render(AddModal, { props: { show: true } });
-    expect(getByTestId("add-course-modal")).toBeDefined();
-    expect(document.body.style.overflow).toBe("hidden");
-  });
-
-  it("should handle close button click with and without onClose prop", async () => {
+  it("menyimpan kursus lalu memanggil onSaved dan onClose", async () => {
+    vi.mocked(postCourse).mockResolvedValue(ok());
+    const onSaved = vi.fn();
     const onClose = vi.fn();
-    const { getByTestId, rerender } = render(AddModal, {
-      props: { show: true, onClose },
-    });
-
-    await fireEvent.click(getByTestId("close-add-modal-btn"));
-    expect(onClose).toHaveBeenCalled();
-
-    // Rerender without onClose and click cancel
-    await rerender({ show: true, onClose: undefined });
-    await fireEvent.click(getByTestId("cancel-add-modal-btn"));
+    const { container } = renderWithProviders(AddModal, { props: { onSaved, onClose } });
+    await fill(container);
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(postCourse).toHaveBeenCalledWith("Kursus Baru", "Isi kursus");
+    expect(onSaved).toHaveBeenCalledOnce();
   });
 
-  it("should validate empty title", async () => {
-    const errorSpy = vi.spyOn(toolsHelper, "showErrorDialog").mockReturnValue();
-    const { getByTestId } = render(AddModal, { props: { show: true } });
-
-    await fireEvent.submit(getByTestId("submit-add-modal-btn"));
-    expect(errorSpy).toHaveBeenCalledWith("Judul tidak boleh kosong");
-  });
-
-  it("should validate empty description", async () => {
-    const errorSpy = vi.spyOn(toolsHelper, "showErrorDialog").mockReturnValue();
-    const { getByTestId } = render(AddModal, { props: { show: true } });
-
-    const titleInput = getByTestId("add-course-title-input");
-    await fireEvent.input(titleInput, { target: { value: "Kursus Baru" } });
-
-    await fireEvent.submit(getByTestId("submit-add-modal-btn"));
-    expect(errorSpy).toHaveBeenCalledWith("Deskripsi tidak boleh kosong");
-  });
-
-  it("should call asyncSetIsCourseAdd on valid submit", async () => {
-    const addSpy = vi.spyOn(coursesStore, "asyncSetIsCourseAdd").mockImplementation(async () => {});
-    const { getByTestId } = render(AddModal, { props: { show: true } });
-
-    const titleInput = getByTestId("add-course-title-input");
-    await fireEvent.input(titleInput, { target: { value: "Kursus Web" } });
-
-    const descInput = getByTestId("add-course-description-input");
-    await fireEvent.input(descInput, { target: { value: "Deskripsi silabus" } });
-
-    await fireEvent.submit(getByTestId("submit-add-modal-btn"));
-    expect(addSpy).toHaveBeenCalledWith("Kursus Web", "Deskripsi silabus");
-  });
-
-  it("should react to successful course addition", async () => {
-    const setCoursesSpy = vi.spyOn(coursesStore, "asyncSetCourses").mockImplementation(async () => {});
+  it("gagal: dialog error dan modal tetap terbuka", async () => {
+    vi.mocked(postCourse).mockResolvedValue(fail("Judul wajib diisi"));
+    const onSaved = vi.fn();
     const onClose = vi.fn();
-    render(AddModal, { props: { show: true, onClose } });
-
-    coursesStore.setIsCourseAdded(true);
-    coursesStore.setIsCourseAdd(true);
-
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(setCoursesSpy).toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
-  });
-
-  it("should react to failed course addition", async () => {
-    const onClose = vi.fn();
-    render(AddModal, { props: { show: true, onClose } });
-
-    coursesStore.setIsCourseAdded(false);
-    coursesStore.setIsCourseAdd(true);
-
-    await new Promise((r) => setTimeout(r, 10));
-
+    const { container } = renderWithProviders(AddModal, { props: { onSaved, onClose } });
+    await fill(container);
+    await waitFor(() =>
+      expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({ icon: "error" })),
+    );
+    expect(onSaved).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("tombol Batal menutup modal", () => {
+    const onClose = vi.fn();
+    renderWithProviders(AddModal, { props: { onSaved: vi.fn(), onClose } });
+    screen.getByRole("button", { name: "Batal" }).click();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

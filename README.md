@@ -1,64 +1,38 @@
-# Delcom Courses - Praktikum 6 PABWE 2026 (SvelteKit)
+# ifs24031-pabwe2026-sk-p6-sveltekit
 
-Aplikasi **Delcom Courses** dibangun menggunakan **SvelteKit (Svelte 5)**, **TypeScript**, dan **Tailwind CSS** untuk Praktikum 6 Pemrograman Aplikasi Berbasis Web (PABWE) 2026.
+Studi Kasus 2 (Praktikum 6): **Delcom Courses** — SvelteKit 3, TypeScript, Svelte 5,
+Tailwind CSS v4, `lucide-svelte`, SweetAlert2, system fonts, Delcom Open API
+(`https://open-api.delcom.org/api/v1`). Local builds use `adapter-bun`; Vercel builds
+automatically use `adapter-vercel`.
 
-**Pembuat**: Kifran Hutasoit (ifs24028)
+## Menjalankan
 
-## 🌐 Live URL & Deployment
-- **Production URL**: [https://ifs24028-pabwe2026-sk-p6-sveltekit.vercel.app](https://ifs24028-pabwe2026-sk-p6-sveltekit.vercel.app)
-- **Deployed on**: [Vercel](https://vercel.com/) (deploy otomatis setiap `git push` ke branch `main`)
-
-## 🚀 Fitur Utama
-1. **Autentikasi Pengguna & Sesi**:
-   - Register akun baru
-   - Login dengan token autentikasi Open API Delcom
-   - Proteksi rute berbasis sesi dan `AuthSessionRedirect`
-2. **Manajemen Kursus (Courses)**:
-   - Tambah kursus baru (title & description)
-   - Unggah dan ubah foto sampul kursus
-   - Ubah informasi kursus dan hapus kursus
-   - Pencarian kursus dan filter kepemilikan kursus ("Kursus Saya")
-3. **Interaksi Peserta & Rating**:
-   - Bergabung sebagai peserta kursus (daftar kursus)
-   - Keluar dari kepesertaan kursus
-   - Memberikan rating kursus pada skala 1 sampai 5
-4. **Materi Kursus (Contents)**:
-   - Tambah, edit, dan hapus materi pembelajaran kursus
-   - Pemutar materi video YouTube berbasis tautan video
-   - Pelacakan status belajar (sudah selesai / belum selesai)
-5. **Kualitas & Pengujian Kode**:
-   - **100% Test Coverage** (Statements, Branches, Functions, Lines) menggunakan Vitest dan `@testing-library/svelte`.
-
-## 🛠️ Menjalankan Secara Lokal
-
-### Prasyarat
-- [Bun](https://bun.sh/) (disarankan) atau [Node.js](https://nodejs.org/) (v18+)
-
-### Instalasi & Menjalankan
 ```bash
-# 1. Install dependensi
 bun install
-
-# 2. Setup environment
-cp .env.example .env
-
-# 3. Jalankan mode pengembangan (port 3005)
-bun run dev
-
-# 4. Menjalankan pengujian coverage (100% coverage)
-bun run test:coverage
-
-# 5. Build dan pratinjau mode produksi
-bun run build
-bun run preview
+bun run test:coverage   # line & function 100%; statement >= 99%, branch >= 85% (lihat vite.config.ts)
+bun run dev             # http://localhost:3005
+bun run build && bun start
 ```
 
-## ☁️ Deployment ke Vercel
+Deploy to Vercel with the default SvelteKit build command (`bun run build`). Vercel
+sets `VERCEL` during the build, which selects the Vercel adapter instead of producing
+a Bun server build. The project pins Vercel's build and function runtime to Node 24.
 
-1. Push repositori `ifs24028-pabwe2026-sk-p6-sveltekit` ke GitHub.
-2. Di dashboard Vercel, pilih **Add New → Project**, lalu impor repositori tersebut.
-3. Framework Preset: **SvelteKit** (terdeteksi otomatis).
-4. Di **Settings → Environment Variables**, isi variabel yang sama dengan `.env.example` (untuk environment **Production**).
-5. Klik **Deploy**. Setiap `git push` ke branch `main` akan memicu deploy ulang secara otomatis.
+`.env` (sudah disertakan) berisi `VITE_DELCOM_BASEURL` dan `APP_PORT=3005`.
+For Vercel, set `VITE_DELCOM_BASEURL=https://open-api.delcom.org/api/v1` in the
+project's environment variables; if it is unset, production builds use that URL by
+default. The local `.env` can continue pointing to `http://localhost:8000/api/v1`.
+Jangan memakai `bun test`; gunakan `bun run test` atau `bun x vitest run`.
 
-> Catatan: Vercel memerlukan adapter `@sveltejs/adapter-vercel` (atau `@sveltejs/adapter-auto`) pada `svelte.config.js`.
+## Proxy API
+
+Browser memanggil `/api/*` di origin aplikasi sendiri; `src/routes/api/[...path]/+server.ts`
+meneruskannya ke `VITE_DELCOM_BASEURL` dari sisi server. Dengan begitu tidak ada permintaan
+lintas-origin (CORS) dari browser ke Delcom Open API. Gambar sampul/foto tetap dimuat
+langsung dari server Delcom lewat `getAssetUrl`.
+
+## Struktur
+
+- `src/routes` — halaman SvelteKit (`/`, `/courses/[courseId]`, `/courses/[courseId]/contents/[contentId]`, `/auth/*`, `/users`, `/profile`, `+error.svelte`)
+- `src/features/{auth,users,courses,common}` — api, states (Svelte store), layouts, pages, modals, components
+- `src/helpers`, `src/hooks` — `apiHelper`, `toolsHelper`, `storeHelper`, `useInput`

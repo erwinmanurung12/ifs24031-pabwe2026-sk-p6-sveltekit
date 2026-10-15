@@ -1,117 +1,59 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { goto } from "$app/navigation";
+import { screen, waitFor } from "@testing-library/svelte";
+import { createRawSnippet } from "svelte";
+import { get } from "svelte/store";
+import { describe, expect, it, vi } from "vitest";
+import { fail, makeUser, ok, renderWithProviders } from "../../../test-utils";
+import { getMe } from "../../users/api/userApi";
+import { authToken } from "../../auth/states/authStore";
 import CourseLayout from "./CourseLayout.svelte";
-import { renderWithProviders } from "../../../test-utils";
-import apiHelper from "../../../helpers/apiHelper";
-import { mockGoto } from "../../../setupTests";
+
+vi.mock("../../users/api/userApi");
+
+const children = createRawSnippet(() => ({ render: () => "<p>konten halaman</p>" }));
 
 describe("CourseLayout", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it("tanpa token: pindah ke halaman masuk", async () => {
+    renderWithProviders(CourseLayout, { props: { children } });
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/auth/login"));
+    expect(screen.getByText("Memuat...")).toBeInTheDocument();
+    expect(screen.queryByText("konten halaman")).not.toBeInTheDocument();
   });
 
-  it("should redirect to login if access token does not exist", () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue(null);
-
-    const { wrapper } = renderWithProviders(CourseLayout, {
-      preloadedState: {
-        profile: null,
-      },
-    });
-
-    expect(mockGoto).toHaveBeenCalledWith("/auth/login");
-    expect(wrapper.text()).toContain("Memuat sesi pengguna...");
+  it("dengan token tanpa profil: memuat profil lalu menampilkan konten", async () => {
+    vi.mocked(getMe).mockResolvedValue(ok({ user: makeUser() }));
+    renderWithProviders(CourseLayout, { token: "t", props: { children } });
+    expect(await screen.findByText("konten halaman")).toBeInTheDocument();
+    expect(getMe).toHaveBeenCalledOnce();
+    expect(goto).not.toHaveBeenCalled();
   });
 
-  it("should render layout with navbar and sidebar when profile is present and handle sidebar toggling & logout", async () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue("valid-token");
-
-    const { wrapper, authStore } = renderWithProviders(CourseLayout, {
-      preloadedState: {
-        profile: {
-          id: 1,
-          name: "Test User",
-          email: "test@delcom.org",
-        },
-      },
-    });
-
-    expect(wrapper.text()).toContain("Delcom Courses");
-    expect(wrapper.text()).toContain("Test User");
-
-    // Toggle sidebar
-    const toggleBtn = wrapper.find('[data-testid="toggle-sidebar-btn"]');
-    await toggleBtn.trigger("click");
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Click backdrop to close mobile sidebar
-    const backdrop = wrapper.find('[data-testid="sidebar-backdrop"]');
-    await backdrop.trigger("click");
-    await new Promise((r) => setTimeout(r, 10));
-
-    // Click nav link to close mobile sidebar as well
-    const navLinks = wrapper.findAll("aside a");
-    if (navLinks.length > 0) {
-      await navLinks[0].trigger("click");
-      await new Promise((r) => setTimeout(r, 10));
-    }
-
-    // Trigger logout from navbar
-    const logoutSpy = vi.spyOn(authStore, "asyncSetIsAuthLogout").mockImplementation(() => {});
-    const dropdownBtn = wrapper.find('[data-testid="profile-dropdown-button"]');
-    await dropdownBtn.trigger("click");
-    const logoutBtn = wrapper.find('[data-testid="dropdown-logout-button"]');
-    await logoutBtn.trigger("click");
-
-    expect(logoutSpy).toHaveBeenCalled();
+  it("token ditolak: sesi dibersihkan dan pindah ke halaman masuk", async () => {
+    vi.mocked(getMe).mockResolvedValue(fail("Unauthenticated."));
+    renderWithProviders(CourseLayout, { token: "basi", props: { children } });
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/auth/login"));
+    expect(get(authToken)).toBeNull();
   });
 
-  it("should stay on page when isProfile is triggered and profile exists", async () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue("valid-token");
-
-    const { wrapper, usersStore } = renderWithProviders(CourseLayout, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User" },
-        isProfile: false,
-      },
+  it("profil siap: sidebar bisa dibuka/ditutup dan logout mengarahkan ke masuk", async () => {
+    const { container } = renderWithProviders(CourseLayout, {
+      token: "t",
+      profile: makeUser(),
+      path: "/users",
+      props: { children },
     });
+    expect(getMe).not.toHaveBeenCalled();
+    expect(screen.getByText("konten halaman")).toBeInTheDocument();
 
-    usersStore.setIsProfile(true);
-    await new Promise((r) => setTimeout(r, 10));
+    const aside = container.querySelector("aside");
+    expect(aside).toHaveClass("hidden");
+    screen.getByRole("button", { name: "Buka menu" }).click();
+    await waitFor(() => expect(aside).not.toHaveClass("hidden"));
+    screen.getByRole("link", { name: "Profil" }).click();
+    await waitFor(() => expect(aside).toHaveClass("hidden"));
 
-    expect(wrapper.text()).toContain("Logged User");
-  });
-
-  it("should redirect to login when isProfile is triggered and profile is null", async () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue("valid-token");
-    const putTokenSpy = vi.spyOn(apiHelper, "putAccessToken").mockImplementation(() => {});
-
-    const { usersStore } = renderWithProviders(CourseLayout, {
-      preloadedState: {
-        profile: null,
-        isProfile: false,
-      },
-    });
-
-    usersStore.setIsProfile(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(putTokenSpy).toHaveBeenCalledWith("");
-    expect(mockGoto).toHaveBeenCalledWith("/auth/login");
-  });
-
-  it("should redirect to login when isAuthLogout is true", async () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue("valid-token");
-
-    const { authStore } = renderWithProviders(CourseLayout, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User" },
-        isAuthLogout: false,
-      },
-    });
-
-    authStore.setIsAuthLogout(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(mockGoto).toHaveBeenCalledWith("/auth/login");
+    screen.getByRole("button", { name: "Keluar" }).click();
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/auth/login"));
+    expect(screen.queryByText("konten halaman")).not.toBeInTheDocument();
   });
 });

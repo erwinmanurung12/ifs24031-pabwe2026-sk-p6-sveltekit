@@ -1,343 +1,221 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, fireEvent } from "@testing-library/svelte";
+import { goto } from "$app/navigation";
+import { fireEvent, screen, waitFor } from "@testing-library/svelte";
+import Swal from "sweetalert2";
+import { describe, expect, it, vi } from "vitest";
+import {
+  fail,
+  makeContent,
+  makeDetail,
+  makeUser,
+  ok,
+  renderWithProviders,
+  submitForm,
+  typeInto,
+} from "../../../test-utils";
+import * as api from "../api/courseApi";
 import DetailPage from "./DetailPage.svelte";
-import coursesStore from "../states/coursesStore";
-import usersStore from "../../users/states/usersStore";
-import * as toolsHelper from "../../../helpers/toolsHelper";
-import * as navigation from "$app/navigation";
 
-describe("DetailPage", () => {
-  const mockOwnerProfile = {
-    id: 1,
-    name: "Instructor Alice",
-    email: "alice@delcom.org",
-    username: "alice",
-  };
+vi.mock("../api/courseApi");
 
-  const mockStudentProfile = {
-    id: 2,
-    name: "Student Bob",
-    email: "bob@delcom.org",
-    username: "bob",
-  };
+const PROFILE_ID = 1;
 
-  const mockCourseData = {
-    id: 50,
-    user_id: 1,
-    title: "Fullstack SvelteKit",
-    description: "Belajar SvelteKit dari nol sampai mahir.",
-    cover: "https://example.com/cover.jpg",
-    author: { name: "Instructor Alice" },
-    students: [2, 3],
-    my_percentage_finished: 50,
-    avg_ratings: 4.8,
-    ratings: [
-      { name: "Student Bob", ratings: 5, comment: "Luar biasa!" },
-      { name: "Student Charlie", ratings: 4, comment: "" },
-    ],
-    contents: [
-      {
-        id: 501,
-        title: "01. Pendahuluan",
-        youtube: "https://youtu.be/intro",
-        my_status_finished: true,
-      },
-      {
-        id: 502,
-        title: "02. Routing & Layout",
-        youtube: "https://youtu.be/routing",
-        my_status_finished: false,
-      },
-    ],
-  };
+const asOwner = { user_id: PROFILE_ID, students: [PROFILE_ID] }; // pemilik sekaligus peserta
+const asStudent = { user_id: 2, students: [PROFILE_ID] };
+const asGuest = { user_id: 2, students: [] as number[] };
 
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    coursesStore.reset();
-    usersStore.reset();
+async function setup(override: Partial<CourseDetail> = asGuest) {
+  vi.mocked(api.getCourse).mockResolvedValue(ok({ course: makeDetail(override) }));
+  const view = renderWithProviders(DetailPage, {
+    token: "t",
+    profile: makeUser({ id: PROFILE_ID }),
+    props: { courseId: "10" },
+  });
+  await screen.findByRole("heading", { name: "Belajar Svelte" });
+  return view;
+}
+
+const confirmNo = () =>
+  vi.mocked(Swal.fire).mockResolvedValueOnce({ isConfirmed: false } as never);
+
+describe("status halaman", () => {
+  it("menampilkan status memuat", async () => {
+    vi.mocked(api.getCourse).mockReturnValue(new Promise(() => {}));
+    renderWithProviders(DetailPage, { token: "t", profile: makeUser(), props: { courseId: "10" } });
+    expect(await screen.findByText("Memuat kursus...")).toBeInTheDocument();
   });
 
-  it("does not call asyncSetCourse on mount if courseId is null", () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse");
-    render(DetailPage, { props: { courseId: null } });
-    expect(setCourseSpy).not.toHaveBeenCalled();
+  it("menampilkan pesan bila kursus tidak ditemukan", async () => {
+    vi.mocked(api.getCourse).mockResolvedValue(fail());
+    renderWithProviders(DetailPage, { token: "t", profile: makeUser(), props: { courseId: "10" } });
+    expect(await screen.findByText("Kursus tidak ditemukan.")).toBeInTheDocument();
+    expect(api.getCourse).toHaveBeenCalledWith("10");
   });
 
-  it("navigates back to home when back button is clicked", async () => {
-    const gotoSpy = vi.spyOn(navigation, "goto").mockResolvedValue();
-    const { getByTestId } = render(DetailPage, { props: { courseId: 50 } });
+  it("menampilkan teks kosong untuk materi dan rating", async () => {
+    await setup({ ...asGuest, contents: [], ratings: [] });
+    expect(screen.getByText("Belum ada materi.")).toBeInTheDocument();
+    expect(screen.getByText("Belum ada rating.")).toBeInTheDocument();
+  });
+});
 
-    await fireEvent.click(getByTestId("back-button"));
-    expect(gotoSpy).toHaveBeenCalledWith("/");
+describe("antarmuka berdasarkan peran", () => {
+  it("pemilik didahulukan walau juga terdaftar sebagai peserta", async () => {
+    await setup(asOwner);
+    expect(screen.getByRole("button", { name: "Ubah Data" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ubah Sampul" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Hapus Kursus" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tambah Materi" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Keluar dari Kursus" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Progres Belajar")).not.toBeInTheDocument();
   });
 
-  it("renders loading state when course is null", () => {
-    coursesStore.setCourse(null);
-    const { getByText } = render(DetailPage, { props: { courseId: 50 } });
-    expect(getByText("Memuat detail kursus...")).toBeDefined();
+  it("peserta melihat progres, rating, dan tautan materi", async () => {
+    await setup(asStudent);
+    expect(screen.getByRole("button", { name: "Keluar dari Kursus" })).toBeInTheDocument();
+    expect(screen.getByText("50.00% selesai")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Pengantar" })).toHaveAttribute("href", "/courses/10/contents/100");
+    expect(screen.queryByRole("button", { name: "Tambah Materi" })).not.toBeInTheDocument();
   });
 
-  it("renders owner view with management controls", async () => {
-    usersStore.setProfile(mockOwnerProfile);
-    coursesStore.setCourse(mockCourseData);
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
+  it("tamu hanya bisa mendaftar dan tidak mendapat tautan materi", async () => {
+    await setup(asGuest);
+    expect(screen.getByRole("button", { name: "Daftar Kursus" })).toBeInTheDocument();
+    expect(screen.getByText("Pengantar")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Pengantar" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Ani · 5\/5/)).toBeInTheDocument();
+  });
+});
 
-    const { getByText, getByTestId, queryByTestId } = render(DetailPage, {
-      props: { courseId: 50 },
-    });
-
-    expect(getByText("Pemilik Kursus")).toBeDefined();
-    expect(getByText("Fullstack SvelteKit")).toBeDefined();
-    expect(getByTestId("change-cover-btn")).toBeDefined();
-    expect(getByTestId("edit-course-btn")).toBeDefined();
-    expect(getByTestId("delete-course-btn")).toBeDefined();
-    expect(getByTestId("add-content-btn")).toBeDefined();
-    expect(getByTestId("edit-content-btn-501")).toBeDefined();
-    expect(getByTestId("delete-content-btn-501")).toBeDefined();
-
-    // Change cover modal toggle
-    await fireEvent.click(getByTestId("change-cover-btn"));
-    expect(getByTestId("change-cover-modal")).toBeDefined();
-    await fireEvent.click(getByTestId("close-cover-modal-btn"));
-    expect(queryByTestId("change-cover-modal")).toBeNull();
-
-    // Change modal toggle
-    await fireEvent.click(getByTestId("edit-course-btn"));
-    expect(getByTestId("edit-course-modal")).toBeDefined();
-    await fireEvent.click(getByTestId("close-edit-modal-btn"));
-    expect(queryByTestId("edit-course-modal")).toBeNull();
-
-    // Add content modal toggle
-    await fireEvent.click(getByTestId("add-content-btn"));
-    expect(getByTestId("content-modal")).toBeDefined();
-    await fireEvent.click(getByTestId("close-content-modal-btn"));
-    expect(queryByTestId("content-modal")).toBeNull();
-
-    // Edit content modal toggle
-    await fireEvent.click(getByTestId("edit-content-btn-501"));
-    expect(getByTestId("content-modal")).toBeDefined();
-    await fireEvent.click(getByTestId("close-content-modal-btn"));
+describe("aksi peserta", () => {
+  it("tamu mendaftar lalu data dimuat ulang", async () => {
+    vi.mocked(api.postStudent).mockResolvedValue(ok());
+    await setup(asGuest);
+    screen.getByRole("button", { name: "Daftar Kursus" }).click();
+    await waitFor(() => expect(api.postStudent).toHaveBeenCalledWith("10"));
+    await waitFor(() => expect(api.getCourse).toHaveBeenCalledTimes(2));
   });
 
-  it("handles delete course in owner view (cancelled and confirmed)", async () => {
-    usersStore.setProfile(mockOwnerProfile);
-    coursesStore.setCourse(mockCourseData);
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    const deleteSpy = vi.spyOn(coursesStore, "asyncSetIsCourseDelete").mockImplementation(async () => {});
-
-    // Cancelled
-    vi.spyOn(toolsHelper, "showConfirmDialog").mockResolvedValue({ isConfirmed: false } as any);
-    const { getByTestId } = render(DetailPage, { props: { courseId: 50 } });
-    await fireEvent.click(getByTestId("delete-course-btn"));
-    expect(deleteSpy).not.toHaveBeenCalled();
-
-    // Confirmed
-    vi.spyOn(toolsHelper, "showConfirmDialog").mockResolvedValue({ isConfirmed: true } as any);
-    await fireEvent.click(getByTestId("delete-course-btn"));
-    expect(deleteSpy).toHaveBeenCalledWith(50);
+  it("peserta keluar setelah konfirmasi", async () => {
+    vi.mocked(api.deleteStudent).mockResolvedValue(ok());
+    await setup(asStudent);
+    screen.getByRole("button", { name: "Keluar dari Kursus" }).click();
+    await waitFor(() => expect(api.deleteStudent).toHaveBeenCalledWith("10"));
   });
 
-  it("handles delete content in owner view (cancelled and confirmed)", async () => {
-    usersStore.setProfile(mockOwnerProfile);
-    coursesStore.setCourse(mockCourseData);
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    const deleteContentSpy = vi.spyOn(coursesStore, "asyncSetIsCourseContentDelete").mockImplementation(async () => {});
-
-    // Cancelled
-    vi.spyOn(toolsHelper, "showConfirmDialog").mockResolvedValue({ isConfirmed: false } as any);
-    const { getByTestId } = render(DetailPage, { props: { courseId: 50 } });
-    await fireEvent.click(getByTestId("delete-content-btn-501"));
-    expect(deleteContentSpy).not.toHaveBeenCalled();
-
-    // Confirmed
-    vi.spyOn(toolsHelper, "showConfirmDialog").mockResolvedValue({ isConfirmed: true } as any);
-    await fireEvent.click(getByTestId("delete-content-btn-501"));
-    expect(deleteContentSpy).toHaveBeenCalledWith(501);
+  it("peserta membatalkan keluar", async () => {
+    await setup(asStudent);
+    confirmNo();
+    screen.getByRole("button", { name: "Keluar dari Kursus" }).click();
+    await waitFor(() => expect(Swal.fire).toHaveBeenCalled());
+    expect(api.deleteStudent).not.toHaveBeenCalled();
   });
 
-  it("renders enrolled student view with rate and leave controls", async () => {
-    usersStore.setProfile(mockStudentProfile);
-    coursesStore.setCourse(mockCourseData);
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    const leaveSpy = vi.spyOn(coursesStore, "asyncSetIsCourseStudentLeave").mockImplementation(async () => {});
-
-    const { getByText, getByTestId, queryByTestId } = render(DetailPage, {
-      props: { courseId: 50 },
-    });
-
-    expect(getByText("Terdaftar sebagai Siswa")).toBeDefined();
-    expect(getByText("Progres Belajar Anda")).toBeDefined();
-    expect(getByTestId("rate-course-btn")).toBeDefined();
-    expect(getByTestId("leave-course-btn")).toBeDefined();
-
-    // Rating modal toggle
-    await fireEvent.click(getByTestId("rate-course-btn"));
-    expect(getByTestId("rating-modal")).toBeDefined();
-    await fireEvent.click(getByTestId("close-rating-modal-btn"));
-    expect(queryByTestId("rating-modal")).toBeNull();
-
-    // Leave course cancelled
-    vi.spyOn(toolsHelper, "showConfirmDialog").mockResolvedValue({ isConfirmed: false } as any);
-    await fireEvent.click(getByTestId("leave-course-btn"));
-    expect(leaveSpy).not.toHaveBeenCalled();
-
-    // Leave course confirmed
-    vi.spyOn(toolsHelper, "showConfirmDialog").mockResolvedValue({ isConfirmed: true } as any);
-    await fireEvent.click(getByTestId("leave-course-btn"));
-    expect(leaveSpy).toHaveBeenCalledWith(50);
+  it("rating tanpa bintang ditolak dengan peringatan", async () => {
+    const { container } = await setup(asStudent);
+    await submitForm(container);
+    await waitFor(() =>
+      expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({ icon: "warning" })),
+    );
+    expect(api.putRating).not.toHaveBeenCalled();
   });
 
-  it("renders non-enrolled user view with join button", async () => {
-    usersStore.setProfile({ id: 99, name: "Guest", email: "guest@delcom.org", username: "guest" });
-    coursesStore.setCourse(mockCourseData);
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    const joinSpy = vi.spyOn(coursesStore, "asyncSetIsCourseStudentJoin").mockImplementation(async () => {});
+  it("peserta mengirim rating dan komentar", async () => {
+    vi.mocked(api.putRating).mockResolvedValue(ok());
+    const { container } = await setup(asStudent);
+    screen.getByRole("button", { name: "4 bintang" }).click();
+    await typeInto(screen.getByPlaceholderText("Tulis komentar"), "Mantap");
+    await submitForm(container);
+    await waitFor(() => expect(api.putRating).toHaveBeenCalledWith("10", 4, "Mantap"));
+  });
+});
 
-    const { getByTestId } = render(DetailPage, { props: { courseId: 50 } });
-    const joinBtn = getByTestId("join-course-btn");
-    expect(joinBtn).toBeDefined();
-
-    await fireEvent.click(joinBtn);
-    expect(joinSpy).toHaveBeenCalledWith(50);
+describe("aksi pemilik", () => {
+  it("menghapus kursus setelah konfirmasi lalu ke beranda", async () => {
+    vi.mocked(api.deleteCourse).mockResolvedValue(ok());
+    await setup(asOwner);
+    screen.getByRole("button", { name: "Hapus Kursus" }).click();
+    await waitFor(() => expect(api.deleteCourse).toHaveBeenCalledWith("10"));
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/"));
   });
 
-  it("navigates to content learning page on view-content click", async () => {
-    usersStore.setProfile(mockStudentProfile);
-    coursesStore.setCourse(mockCourseData);
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    const gotoSpy = vi.spyOn(navigation, "goto").mockResolvedValue();
-
-    const { getByTestId } = render(DetailPage, { props: { courseId: 50 } });
-    await fireEvent.click(getByTestId("view-content-btn-501"));
-
-    expect(gotoSpy).toHaveBeenCalledWith("/courses/50/contents/501");
+  it("membatalkan penghapusan kursus", async () => {
+    await setup(asOwner);
+    confirmNo();
+    screen.getByRole("button", { name: "Hapus Kursus" }).click();
+    await waitFor(() => expect(Swal.fire).toHaveBeenCalled());
+    expect(api.deleteCourse).not.toHaveBeenCalled();
   });
 
-  it("renders empty contents message when contents array is empty", () => {
-    usersStore.setProfile(mockStudentProfile);
-    coursesStore.setCourse({ ...mockCourseData, contents: [] });
-    vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-
-    const { getByText } = render(DetailPage, { props: { courseId: 50 } });
-    expect(getByText("Belum ada video materi di kursus ini.")).toBeDefined();
+  it("menghapus materi setelah konfirmasi", async () => {
+    vi.mocked(api.deleteContent).mockResolvedValue(ok());
+    await setup(asOwner);
+    screen.getByRole("button", { name: "Hapus materi Pengantar" }).click();
+    await waitFor(() => expect(api.deleteContent).toHaveBeenCalledWith(100));
   });
 
-  it("reacts to isCourseDeleted and navigates home", async () => {
-    const gotoSpy = vi.spyOn(navigation, "goto").mockResolvedValue();
-    render(DetailPage, { props: { courseId: 50 } });
-
-    coursesStore.setIsCourseDeleted(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(gotoSpy).toHaveBeenCalledWith("/");
+  it("membatalkan penghapusan materi", async () => {
+    await setup(asOwner);
+    confirmNo();
+    screen.getByRole("button", { name: "Hapus materi Pengantar" }).click();
+    await waitFor(() => expect(Swal.fire).toHaveBeenCalled());
+    expect(api.deleteContent).not.toHaveBeenCalled();
   });
 
-  it("reacts to student join success and reloads course", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: 50 } });
+  it("membuka dan menutup modal ubah data, sampul, dan materi", async () => {
+    await setup({ ...asOwner, contents: [makeContent()] });
 
-    coursesStore.setIsCourseStudentJoined(true);
-    coursesStore.setIsCourseStudentJoin(true);
-    await new Promise((r) => setTimeout(r, 10));
+    screen.getByRole("button", { name: "Ubah Data" }).click();
+    expect(await screen.findByRole("dialog", { name: "Ubah Kursus" })).toBeInTheDocument();
+    screen.getByRole("button", { name: "Tutup" }).click();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
 
-    expect(setCourseSpy).toHaveBeenCalledWith(50);
+    screen.getByRole("button", { name: "Ubah Sampul" }).click();
+    expect(await screen.findByRole("dialog", { name: "Ubah Sampul" })).toBeInTheDocument();
+    screen.getByRole("button", { name: "Tutup" }).click();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    screen.getByRole("button", { name: "Tambah Materi" }).click();
+    expect(await screen.findByRole("dialog", { name: "Tambah Materi" })).toBeInTheDocument();
+    screen.getByRole("button", { name: "Tutup" }).click();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    screen.getByRole("button", { name: "Ubah materi Pengantar" }).click();
+    expect(await screen.findByRole("dialog", { name: "Ubah Materi" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Judul")).toHaveValue("Pengantar");
   });
 
-  it("reacts to student leave success and reloads course", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: 50 } });
-
-    coursesStore.setIsCourseStudentLeft(true);
-    coursesStore.setIsCourseStudentLeave(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(setCourseSpy).toHaveBeenCalledWith(50);
+  it("menyimpan perubahan data kursus memuat ulang detail", async () => {
+    vi.mocked(api.putCourse).mockResolvedValue(ok());
+    const { container } = await setup(asOwner);
+    screen.getByRole("button", { name: "Ubah Data" }).click();
+    await screen.findByRole("dialog");
+    await typeInto(screen.getByLabelText("Judul"), "Judul Baru");
+    await submitForm(container);
+    await waitFor(() => expect(api.putCourse).toHaveBeenCalledWith(10, "Judul Baru", "Dasar-dasar Svelte"));
+    await waitFor(() => expect(api.getCourse).toHaveBeenCalledTimes(2));
   });
 
-  it("reacts to content delete success and reloads course", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: 50 } });
-
-    coursesStore.setIsCourseContentDeleted(true);
-    coursesStore.setIsCourseContentDelete(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(setCourseSpy).toHaveBeenCalledWith(50);
+  it("menyimpan perubahan sampul kursus memuat ulang detail", async () => {
+    vi.mocked(api.postCover).mockResolvedValue(ok());
+    const { container } = await setup(asOwner);
+    screen.getByRole("button", { name: "Ubah Sampul" }).click();
+    await screen.findByRole("dialog", { name: "Ubah Sampul" });
+    const file = new File(["dummy"], "cover.png", { type: "image/png" });
+    await fireEvent.change(screen.getByLabelText("Berkas sampul"), { target: { files: [file] } });
+    await submitForm(container);
+    await waitFor(() => expect(api.postCover).toHaveBeenCalledWith(10, file));
+    await waitFor(() => expect(api.getCourse).toHaveBeenCalledTimes(2));
   });
 
-  it("reacts to student join failure without reloading course", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: 50 } });
-    setCourseSpy.mockClear();
-
-    coursesStore.setIsCourseStudentJoined(false);
-    coursesStore.setIsCourseStudentJoin(true);
-    await new Promise((r) => setTimeout(r, 10));
-    expect(setCourseSpy).not.toHaveBeenCalled();
-  });
-
-  it("reacts to student leave failure without reloading course", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: 50 } });
-    setCourseSpy.mockClear();
-
-    coursesStore.setIsCourseStudentLeft(false);
-    coursesStore.setIsCourseStudentLeave(true);
-    await new Promise((r) => setTimeout(r, 10));
-    expect(setCourseSpy).not.toHaveBeenCalled();
-  });
-
-  it("reacts to content delete failure without reloading course", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: 50 } });
-    setCourseSpy.mockClear();
-
-    coursesStore.setIsCourseContentDeleted(false);
-    coursesStore.setIsCourseContentDelete(true);
-    await new Promise((r) => setTimeout(r, 10));
-    expect(setCourseSpy).not.toHaveBeenCalled();
-  });
-
-  it("renders course with fallback values (no cover, no author, no students, no contents, no ratings)", () => {
-    usersStore.setProfile(null);
-    coursesStore.setCourse({
-      id: 999,
-      user_id: 100,
-      title: "Fallback Course",
-      description: "Fallback description",
-      cover: null,
-      avg_ratings: 0,
-      author: null,
-      students: null,
-      contents: null,
-      ratings: null,
-    });
-
-    const { getByText } = render(DetailPage, { props: { courseId: 999 } });
-    expect(getByText("Fallback Course")).toBeDefined();
-    expect(getByText("Rating: 0.0")).toBeDefined();
-    expect(getByText("0 Siswa Terdaftar")).toBeDefined();
-    expect(getByText("0 Modul Video")).toBeDefined();
-    expect(getByText("Pengajar")).toBeDefined();
-  });
-
-  it("does not reload course if courseId is null on student join/leave/content delete success", async () => {
-    const setCourseSpy = vi.spyOn(coursesStore, "asyncSetCourse").mockImplementation(async () => {});
-    render(DetailPage, { props: { courseId: null } });
-    setCourseSpy.mockClear();
-
-    coursesStore.setIsCourseStudentJoined(true);
-    coursesStore.setIsCourseStudentJoin(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    coursesStore.setIsCourseStudentLeft(true);
-    coursesStore.setIsCourseStudentLeave(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    coursesStore.setIsCourseContentDeleted(true);
-    coursesStore.setIsCourseContentDelete(true);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(setCourseSpy).not.toHaveBeenCalled();
+  it("menyimpan penambahan materi baru memuat ulang detail", async () => {
+    vi.mocked(api.postContent).mockResolvedValue(ok());
+    const { container } = await setup(asOwner);
+    screen.getByRole("button", { name: "Tambah Materi" }).click();
+    await screen.findByRole("dialog", { name: "Tambah Materi" });
+    await typeInto(screen.getByLabelText("Judul"), "Materi Baru");
+    await typeInto(screen.getByLabelText("Tautan YouTube"), "https://youtu.be/abc");
+    await submitForm(container);
+    await waitFor(() => expect(api.postContent).toHaveBeenCalledWith(10, "Materi Baru", "https://youtu.be/abc"));
+    await waitFor(() => expect(api.getCourse).toHaveBeenCalledTimes(2));
   });
 });

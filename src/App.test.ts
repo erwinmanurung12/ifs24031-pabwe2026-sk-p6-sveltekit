@@ -1,150 +1,36 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import RootLayout from "./routes/+layout.svelte";
-import { ssr } from "./routes/+layout";
-import { ssr as authSsr } from "./routes/auth/+layout";
-import RootPage from "./routes/+page.svelte";
-import RootError from "./routes/+error.svelte";
-import AuthLayout from "./routes/auth/+layout.svelte";
-import LoginPageWrapper from "./routes/auth/login/+page.svelte";
-import RegisterPageWrapper from "./routes/auth/register/+page.svelte";
-import ProfilePageWrapper from "./routes/profile/+page.svelte";
-import CourseDetailPageWrapper from "./routes/courses/[courseId]/+page.svelte";
-import CourseContentPageWrapper from "./routes/courses/[courseId]/contents/[contentId]/+page.svelte";
-import UsersPageWrapper from "./routes/users/+page.svelte";
-import { renderWithProviders } from "./test-utils";
-import { updateMockPage } from "./setupTests";
-import apiHelper from "./helpers/apiHelper";
-import { usersStore } from "./features/users/states/usersStore";
+import { get } from "svelte/store";
+import { describe, expect, it, vi } from "vitest";
+import { authProfile, authToken, login, logout } from "./features/auth/states/authStore";
+import { loadCourses, courses } from "./features/courses/states/coursesStore";
+import { makeCourse, makeUser, resetStores } from "./test-utils";
 
-describe("SvelteKit Routes and Layouts", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // Hindari request jaringan sungguhan agar hasil test deterministik
-    vi.spyOn(usersStore, "asyncSetProfile").mockImplementation(() => Promise.resolve());
-    updateMockPage({
-      url: new URL("http://localhost:3005/"),
-      params: { courseId: "1", contentId: "1" },
-      route: { id: "/" },
-      status: 200,
-      error: null,
-      data: {},
-      form: null,
+/** Alur lengkap melalui fetch palsu: login -> token -> profil -> daftar kursus. */
+describe("alur aplikasi (API dengan fetch palsu)", () => {
+  it("login menyimpan token, memuat profil, lalu permintaan berikutnya memakai Bearer token", async () => {
+    resetStores();
+    const fetchMock = vi.fn(async (url: string) => {
+      const json = (body: unknown) => ({ json: async () => body });
+      if (url.endsWith("/auth/login")) {
+        return json({ status: "success", message: "ok", data: { token: "tok-9", user: makeUser() } });
+      }
+      if (url.endsWith("/users/me")) {
+        return json({ status: "success", message: "ok", data: { user: makeUser() } });
+      }
+      return json({ status: "success", message: "ok", data: { courses: [makeCourse()] } });
     });
-  });
+    vi.stubGlobal("fetch", fetchMock);
 
-  it("should render auth routes on the client only (ssr=false) to avoid pre-hydration form submit", () => {
-    expect(authSsr).toBe(false);
-  });
+    await login("budi@del.ac.id", "rahasia");
+    expect(get(authToken)).toBe("tok-9");
+    expect(get(authProfile)?.name).toBe("Budi");
 
-  it("should verify ssr is true in +layout.ts", () => {
-    expect(ssr).toBe(true);
-  });
+    await loadCourses(true);
+    expect(get(courses)).toHaveLength(1);
+    const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(url).toBe("/api/courses?is_me=1");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok-9");
 
-  it("should render RootLayout for non-auth route using CourseLayout", () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue("valid-token");
-    const { wrapper } = renderWithProviders(RootLayout, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User", email: "user@del.org" },
-      },
-    });
-
-    expect(wrapper.text()).toContain("Delcom Courses");
-  });
-
-  it("should render RootLayout for /auth route directly", async () => {
-    const { wrapper } = renderWithProviders(RootLayout, { route: "/auth/login" });
-    expect(wrapper.text()).not.toContain("Delcom Courses");
-  });
-
-  it("should dynamically switch layout between non-auth and auth route on navigation", async () => {
-    vi.spyOn(apiHelper, "getAccessToken").mockReturnValue("valid-token");
-    const { wrapper } = renderWithProviders(RootLayout, {
-      route: "/",
-      preloadedState: {
-        profile: { id: 1, name: "Logged User", email: "user@del.org" },
-      },
-    });
-
-    expect(wrapper.text()).toContain("Delcom Courses");
-
-    // Navigate to /auth/login (simulating logout)
-    updateMockPage({ url: new URL("http://localhost:3005/auth/login") });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(wrapper.text()).not.toContain("Delcom Courses");
-
-    // Navigate back to / (simulating login)
-    updateMockPage({ url: new URL("http://localhost:3005/") });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(wrapper.text()).toContain("Delcom Courses");
-  });
-
-  it("should render RootPage (+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(RootPage, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User" },
-        courses: [],
-      },
-    });
-    expect(wrapper.exists()).toBe(true);
-  });
-
-  it("should render RootError (+error.svelte)", () => {
-    const { wrapper } = renderWithProviders(RootError);
-    expect(wrapper.text()).toContain("404");
-    expect(wrapper.text()).toContain("Halaman Tidak Ditemukan");
-  });
-
-  it("should render AuthLayout (routes/auth/+layout.svelte)", () => {
-    const { wrapper } = renderWithProviders(AuthLayout);
-    expect(wrapper.text()).toContain("Delcom Courses");
-  });
-
-  it("should render LoginPageWrapper (routes/auth/login/+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(LoginPageWrapper);
-    expect(wrapper.text()).toContain("Masuk Sekarang");
-  });
-
-  it("should render RegisterPageWrapper (routes/auth/register/+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(RegisterPageWrapper);
-    expect(wrapper.text()).toContain("Daftar Sekarang");
-  });
-
-  it("should render ProfilePageWrapper (routes/profile/+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(ProfilePageWrapper, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User", email: "user@del.org" },
-      },
-    });
-    expect(wrapper.text()).toContain("Profil Akun");
-  });
-
-  it("should render CourseDetailPageWrapper (routes/courses/[courseId]/+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(CourseDetailPageWrapper, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User" },
-        course: { id: 1, user_id: 1, title: "Detail Test", description: "Desc" },
-      },
-    });
-    expect(wrapper.text()).toContain("Detail Test");
-  });
-
-  it("should render CourseContentPageWrapper (routes/courses/[courseId]/contents/[contentId]/+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(CourseContentPageWrapper, {
-      preloadedState: {
-        profile: { id: 1, name: "Logged User" },
-        course: { id: 1, user_id: 1, title: "Course 1", description: "Desc" },
-        courseContent: { id: 1, title: "Content Test", youtube: "https://youtu.be/123" },
-      },
-    });
-    expect(wrapper.text()).toContain("Content Test");
-  });
-
-  it("should render UsersPageWrapper (routes/users/+page.svelte)", () => {
-    const { wrapper } = renderWithProviders(UsersPageWrapper, {
-      preloadedState: {
-        users: [{ id: 1, name: "User Satu", email: "satu@del.org" }],
-      },
-    });
-    expect(wrapper.text()).toContain("Semua Pengguna");
+    logout();
+    expect(get(authToken)).toBeNull();
   });
 });
